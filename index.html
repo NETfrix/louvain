@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Louvain Algorithm — Interactive Explanation</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+header{padding:12px 24px;background:#161822;border-bottom:1px solid #2a2d3a;display:flex;align-items:center;gap:16px;flex-shrink:0}
+header h1{font-size:1.1rem;font-weight:600;color:#7eb8f7}
+header .step-label{font-size:.85rem;color:#999;margin-left:auto}
+.main{display:flex;flex:1;overflow:hidden}
+.graph-panel{flex:1;position:relative;min-width:0}
+svg{width:100%;height:100%;display:block}
+.side-panel{width:420px;flex-shrink:0;background:#161822;border-left:1px solid #2a2d3a;display:flex;flex-direction:column;overflow:hidden}
+.side-panel h2{padding:16px 20px 8px;font-size:.95rem;color:#7eb8f7;font-weight:600}
+.explanation{padding:8px 20px 16px;font-size:.85rem;line-height:1.6;overflow-y:auto;flex:1}
+.explanation p{margin-bottom:10px}
+.formula-box{background:#1c1f2e;border:1px solid #2a2d3a;border-radius:8px;padding:14px 16px;margin:10px 0;font-family:'Courier New',monospace;font-size:.82rem;line-height:1.7;color:#c8d6e5}
+.formula-box .highlight{color:#f7c948;font-weight:600}
+.formula-box .result{color:#4ade80;font-weight:700}
+.formula-box .label{color:#7eb8f7}
+.formula-box .sep{color:#555;display:block;border-top:1px solid #333;margin:6px 0}
+.community-list{list-style:none;padding:0;margin:8px 0}
+.community-list li{padding:4px 8px;margin:2px 0;border-radius:4px;font-size:.82rem;display:flex;align-items:center;gap:8px}
+.community-list li .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.timeline{flex-shrink:0;background:#161822;border-top:1px solid #2a2d3a;padding:12px 24px 16px}
+.timeline-label{font-size:.72rem;color:#666;margin-bottom:6px;display:flex;justify-content:space-between}
+.timeline-track{position:relative;height:32px;display:flex;align-items:center;gap:0}
+.tl-step{flex:1;height:6px;background:#252836;cursor:pointer;position:relative;transition:background .2s}
+.tl-step:first-child{border-radius:3px 0 0 3px}
+.tl-step:last-child{border-radius:0 3px 3px 0}
+.tl-step.active{background:#7eb8f7}
+.tl-step.done{background:#3b5998}
+.tl-step:hover{background:#4a5580}
+.tl-step .tl-dot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#252836;border:2px solid #3b5998;display:none}
+.tl-step.milestone .tl-dot{display:block}
+.tl-step.active .tl-dot{background:#7eb8f7;border-color:#7eb8f7}
+.tl-step.done .tl-dot{background:#3b5998;border-color:#3b5998}
+.tl-tooltip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#252836;color:#ccc;font-size:.7rem;padding:3px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s}
+.tl-step:hover .tl-tooltip{opacity:1}
+.nav-btns{display:flex;gap:8px;margin-top:8px;justify-content:center}
+.nav-btns button{padding:6px 18px;border:1px solid #3b5998;background:transparent;color:#7eb8f7;border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .15s}
+.nav-btns button:hover{background:#3b5998;color:#fff}
+.nav-btns button:disabled{opacity:.3;cursor:default;background:transparent}
+.badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.7rem;font-weight:600;margin-left:6px}
+.badge-phase1{background:#2d4a1e;color:#6ee76e}
+.badge-phase2{background:#4a3a1e;color:#f7c948}
+.badge-intro{background:#1e3a4a;color:#7eb8f7}
+.badge-result{background:#3a1e4a;color:#c084fc}
+.node-label{font-size:11px;fill:#fff;text-anchor:middle;pointer-events:none;font-weight:600}
+.edge{stroke:#334;stroke-width:1.5}
+.edge.bridge{stroke:#553a1e;stroke-dasharray:4,3}
+.edge.highlight-edge{stroke:#f7c948;stroke-width:3;stroke-dasharray:none}
+.graph-info{position:absolute;top:12px;left:12px;font-size:.75rem;color:#556;line-height:1.5}
+.graph-info span{color:#7eb8f7}
+.modularity-display{position:absolute;top:12px;right:12px;background:#1c1f2ecc;padding:8px 14px;border-radius:8px;font-size:.85rem;border:1px solid #2a2d3a}
+.modularity-display .q-val{color:#4ade80;font-weight:700;font-size:1.1rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>Louvain Community Detection</h1>
+  <span class="step-label" id="stepLabel">Step 0 / 0</span>
+</header>
+<div class="main">
+  <div class="graph-panel" id="graphPanel">
+    <svg id="graphSvg"></svg>
+    <div class="graph-info" id="graphInfo"></div>
+    <div class="modularity-display" id="modDisplay">Q = <span class="q-val" id="qVal">0.0000</span></div>
+  </div>
+  <div class="side-panel">
+    <h2 id="sideTitle">Introduction</h2>
+    <div class="explanation" id="explanation"></div>
+  </div>
+</div>
+<div class="timeline">
+  <div class="timeline-label"><span>Timeline</span><span id="phaseLabel">Introduction</span></div>
+  <div class="timeline-track" id="timeline"></div>
+  <div class="nav-btns">
+    <button id="btnFirst" onclick="goStep(0)">&#x23EE; First</button>
+    <button id="btnPrev" onclick="goStep(currentStep-1)">&#x25C0; Prev</button>
+    <button id="btnNext" onclick="goStep(currentStep+1)">Next &#x25B6;</button>
+    <button id="btnLast" onclick="goStep(steps.length-1)">Last &#x23ED;</button>
+  </div>
+</div>
+
+<script>
+// ── GRAPH DEFINITION ─────────────────────────────────────────
+const EDGES = [
+  // Community A (0-3)
+  [0,1],[0,2],[0,3],[1,2],[2,3],
+  // Community B (4-7)
+  [4,5],[4,6],[4,7],[5,6],[6,7],
+  // Community C (8-11)
+  [8,9],[8,10],[8,11],[9,10],[10,11],
+  // Community D (12-15)
+  [12,13],[12,14],[12,15],[13,14],[14,15],
+  // Bridges
+  [1,4],[7,8],[11,12]
+];
+const N = 16;
+const m = EDGES.length; // 23
+
+const COLORS = [
+  '#e74c3c','#3498db','#2ecc71','#f39c12',
+  '#9b59b6','#1abc9c','#e67e22','#e84393',
+  '#00b894','#6c5ce7','#fd79a8','#00cec9',
+  '#ffeaa7','#dfe6e9','#74b9ff','#a29bfe'
+];
+
+function degree(node) {
+  let d = 0;
+  for (const [a, b] of EDGES) if (a === node || b === node) d++;
+  return d;
+}
+
+function edgesBetween(nodeSet1, nodeSet2) {
+  let count = 0;
+  for (const [a, b] of EDGES) {
+    if ((nodeSet1.has(a) && nodeSet2.has(b)) || (nodeSet1.has(b) && nodeSet2.has(a))) count++;
+  }
+  return count;
+}
+
+// ── MODULARITY COMPUTATION ──────────────────────────────────
+function modularity(communities) {
+  // communities: array of Sets
+  let Q = 0;
+  for (const C of communities) {
+    let lc = 0; // internal edges
+    for (const [a, b] of EDGES) {
+      if (C.has(a) && C.has(b)) lc++;
+    }
+    let dc = 0; // sum of degrees
+    for (const n of C) dc += degree(n);
+    Q += lc / m - (dc / (2 * m)) ** 2;
+  }
+  return Q;
+}
+
+function communityOf(node, assignment) {
+  return assignment[node];
+}
+
+function getCommunities(assignment) {
+  const map = {};
+  for (let i = 0; i < assignment.length; i++) {
+    if (!map[assignment[i]]) map[assignment[i]] = new Set();
+    map[assignment[i]].add(i);
+  }
+  return Object.values(map);
+}
+
+// ── DELTA-Q CALCULATION ─────────────────────────────────────
+function deltaQ(node, targetComm, assignment) {
+  const comNodes = new Set();
+  for (let i = 0; i < assignment.length; i++) {
+    if (assignment[i] === targetComm && i !== node) comNodes.add(i);
+  }
+  // k_{i,in}: edges from node to community
+  let k_in = 0;
+  for (const [a, b] of EDGES) {
+    if (a === node && comNodes.has(b)) k_in++;
+    if (b === node && comNodes.has(a)) k_in++;
+  }
+  // Σ_tot: sum of degrees of nodes in community
+  let sigma_tot = 0;
+  for (const n of comNodes) sigma_tot += degree(n);
+  const k_i = degree(node);
+  return k_in / m - (sigma_tot * k_i) / (2 * m * m);
+}
+
+// ── BUILD STEPS ─────────────────────────────────────────────
+const steps = [];
+
+function addStep(type, title, badge, assignment, html, extras = {}) {
+  const comms = getCommunities(assignment);
+  steps.push({
+    type, title, badge,
+    assignment: [...assignment],
+    communities: comms,
+    Q: modularity(comms),
+    html,
+    highlightNode: extras.highlightNode ?? -1,
+    highlightEdges: extras.highlightEdges ?? [],
+    highlightComm: extras.highlightComm ?? -1,
+    superGraph: extras.superGraph ?? null,
+  });
+}
+
+function buildSteps() {
+  let assign = Array.from({length: N}, (_, i) => i);
+
+  // Step 0: Introduction
+  addStep('intro', 'What is the Louvain Algorithm?', 'intro', assign, `
+    <p>The <b>Louvain algorithm</b> is a greedy method for <b>community detection</b> in large networks. It optimizes <b>modularity</b> — a measure of how well a network is partitioned into densely connected groups.</p>
+    <p>Our toy network has <b>16 nodes</b> and <b>${m} edges</b>, arranged into 4 natural clusters connected by bridge edges (dashed lines).</p>
+    <p>The algorithm works in two alternating phases:</p>
+    <p><b>Phase 1</b> — Local moves: try moving each node to a neighbor's community if it increases modularity.</p>
+    <p><b>Phase 2</b> — Aggregation: collapse each community into a single super-node and repeat.</p>
+    <p>Initially, every node is its own community (16 communities). Let's begin!</p>
+  `);
+
+  // Step 1: The formula
+  addStep('intro', 'The Modularity Formula', 'intro', assign, `
+    <p>Modularity <b>Q</b> measures partition quality:</p>
+    <div class="formula-box">
+      <span class="label">Q</span> = Σ<sub>c</sub> [ <span class="highlight">L<sub>c</sub>/m</span> − (<span class="highlight">d<sub>c</sub>/2m</span>)² ]
+      <span class="sep"></span>
+      <span class="label">L<sub>c</sub></span> = edges inside community c<br>
+      <span class="label">d<sub>c</sub></span> = sum of degrees in community c<br>
+      <span class="label">m</span> = total edges = ${m}
+    </div>
+    <p>To decide if node <b>i</b> should move to community <b>C</b>, we compute the <b>modularity gain</b>:</p>
+    <div class="formula-box">
+      <span class="label">ΔQ</span> = <span class="highlight">k<sub>i,in</sub></span>/m − (<span class="highlight">Σ<sub>tot</sub></span> · <span class="highlight">k<sub>i</sub></span>) / 2m²
+      <span class="sep"></span>
+      <span class="label">k<sub>i,in</sub></span> = edges from i to community C<br>
+      <span class="label">Σ<sub>tot</sub></span> = sum of degrees in C (excl. i)<br>
+      <span class="label">k<sub>i</sub></span> = degree of node i
+    </div>
+    <p>We move node <b>i</b> to the community giving the <b>largest positive ΔQ</b>.</p>
+  `);
+
+  // Step 2: Show initial modularity
+  const Q0 = modularity(getCommunities(assign));
+  addStep('intro', 'Initial State', 'intro', assign, `
+    <p>Each of the 16 nodes starts in its own community. The initial modularity is:</p>
+    <div class="formula-box">
+      Q = Σ [ 0/${m} − (k<sub>i</sub>/${2*m})² ] = <span class="result">${Q0.toFixed(4)}</span>
+    </div>
+    <p>Since no community has internal edges (L<sub>c</sub>=0 for all), Q is negative — we can only go up from here.</p>
+    <p>Now Phase 1 begins. We scan each node and try moving it to its best neighbor's community.</p>
+  `);
+
+  // ── PHASE 1 ────────────────────────────────────────────────
+  // Run Louvain Phase 1, recording key steps
+  let moveCount = 0;
+  let improved = true;
+  let passNum = 0;
+
+  while (improved) {
+    improved = false;
+    passNum++;
+    const showThisPass = passNum <= 2; // show detail for first 2 passes
+
+    for (let node = 0; node < N; node++) {
+      const currentComm = assign[node];
+      // Find neighbor communities
+      const neighborComms = new Set();
+      const neighborMap = {};
+      for (const [a, b] of EDGES) {
+        const nbr = a === node ? b : (b === node ? a : -1);
+        if (nbr >= 0) {
+          neighborComms.add(assign[nbr]);
+          if (!neighborMap[assign[nbr]]) neighborMap[assign[nbr]] = [];
+          neighborMap[assign[nbr]].push(nbr);
+        }
+      }
+
+      let bestComm = currentComm;
+      let bestDQ = 0;
+      const dqResults = {};
+
+      // ΔQ for removing from current community (always compute)
+      const dqRemove = -deltaQ(node, currentComm, assign);
+
+      for (const comm of neighborComms) {
+        if (comm === currentComm) continue;
+        const dq = deltaQ(node, comm, assign) + dqRemove;
+        dqResults[comm] = dq;
+        if (dq > bestDQ) { bestDQ = dq; bestComm = comm; }
+      }
+
+      if (bestComm !== currentComm && bestDQ > 1e-10) {
+        // Show this move
+        moveCount++;
+        const k_i = degree(node);
+        // Compute displayed values for best community
+        const comNodes = new Set();
+        for (let i = 0; i < assign.length; i++) {
+          if (assign[i] === bestComm && i !== node) comNodes.add(i);
+        }
+        let k_in = 0;
+        const hEdges = [];
+        for (const [a, b] of EDGES) {
+          if (a === node && comNodes.has(b)) { k_in++; hEdges.push([a,b]); }
+          if (b === node && comNodes.has(a)) { k_in++; hEdges.push([a,b]); }
+        }
+        let sigma_tot = 0;
+        for (const n of comNodes) sigma_tot += degree(n);
+
+        const showDetail = showThisPass && moveCount <= 10;
+
+        if (showDetail) {
+          const commMembers = [...comNodes].sort((a,b)=>a-b);
+          // Build neighbor community descriptions
+          const nbrCommDescs = [...neighborComms].map(c => {
+            const members = [];
+            for (let j = 0; j < N; j++) if (assign[j] === c) members.push(j);
+            return '{' + members.sort((a,b)=>a-b).join(',') + '}';
+          });
+          const currentMembers = [];
+          for (let j = 0; j < N; j++) if (assign[j] === currentComm) currentMembers.push(j);
+          const currentDesc = '{' + currentMembers.sort((a,b)=>a-b).join(',') + '}';
+          addStep('phase1', `Move node ${node} → community {${commMembers.join(',')}}`, 'phase1', assign, `
+            <p><b>Phase 1, Pass ${passNum}</b> — Evaluating node <b>${node}</b> (degree k<sub>${node}</sub> = ${k_i}).</p>
+            <p>Node ${node} is currently in community ${currentDesc}. Its neighbors belong to: ${nbrCommDescs.join(', ')}.</p>
+            <p>Best option: move to community <b>{${commMembers.join(',')}}</b>:</p>
+            <div class="formula-box">
+              <span class="label">k<sub>${node},in</sub></span> = ${k_in} (edge${k_in!==1?'s':''} to {${commMembers.join(',')}})<br>
+              <span class="label">Σ<sub>tot</sub></span> = ${sigma_tot} (sum of degrees in target)<br>
+              <span class="label">k<sub>${node}</sub></span> = ${k_i}<br>
+              <span class="label">m</span> = ${m}
+              <span class="sep"></span>
+              <span class="label">ΔQ</span> = ${k_in}/${m} − (${sigma_tot} × ${k_i}) / (2 × ${m}²)<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;= ${(k_in/m).toFixed(4)} − ${(sigma_tot*k_i/(2*m*m)).toFixed(4)}<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;= <span class="result">${bestDQ.toFixed(4)}</span> &gt; 0 ✓ Move!
+            </div>
+          `, { highlightNode: node, highlightEdges: hEdges, highlightComm: bestComm });
+        }
+
+        assign[node] = bestComm;
+        improved = true;
+
+        if (showDetail) {
+          const commsNow = getCommunities(assign);
+          const Qnow = modularity(commsNow);
+          addStep('phase1', `After moving node ${node}`, 'phase1', assign, `
+            <p>Node <b>${node}</b> has been moved. The network now has <b>${commsNow.length} communities</b>.</p>
+            <div class="formula-box">
+              Q = <span class="result">${Qnow.toFixed(4)}</span> (was ${(Qnow - bestDQ).toFixed(4)}, gained ${bestDQ.toFixed(4)})
+            </div>
+            <p>Current communities:</p>
+            <ul class="community-list">${commsNow.map((c, i) => {
+              const members = [...c].sort((a,b)=>a-b);
+              return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
+            }).join('')}</ul>
+          `);
+        }
+      }
+    }
+
+    // After each pass, show summary
+    const commsAfterPass = getCommunities(assign);
+    const QafterPass = modularity(commsAfterPass);
+    if (passNum <= 3) {
+      addStep('phase1', `Phase 1, Pass ${passNum} Complete`, 'phase1', assign, `
+        <p>Pass ${passNum} of Phase 1 is complete. ${improved ? 'Some nodes moved — we\'ll do another pass.' : 'No nodes moved — Phase 1 converges!'}</p>
+        <div class="formula-box">
+          Q = <span class="result">${QafterPass.toFixed(4)}</span><br>
+          Communities: <span class="highlight">${commsAfterPass.length}</span>
+        </div>
+        <p>Communities found:</p>
+        <ul class="community-list">${commsAfterPass.map((c) => {
+          const members = [...c].sort((a,b)=>a-b);
+          return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
+        }).join('')}</ul>
+        ${!improved ? '<p>Phase 1 has <b>converged</b>. No node can improve modularity by switching. Now we move to <b>Phase 2</b>.</p>' : ''}
+      `);
+    }
+  }
+
+  // ── PHASE 2 ────────────────────────────────────────────────
+  const phase1Comms = getCommunities(assign);
+  const Qphase1 = modularity(phase1Comms);
+
+  // Build super-graph
+  const commIds = {};
+  const commList = [];
+  phase1Comms.forEach((c, i) => {
+    commList.push(c);
+    for (const n of c) commIds[n] = i;
+  });
+
+  const superEdges = [];
+  const superWeights = {};
+  const selfLoops = {};
+  for (const [a, b] of EDGES) {
+    const ca = commIds[a], cb = commIds[b];
+    if (ca === cb) {
+      selfLoops[ca] = (selfLoops[ca] || 0) + 1;
+    } else {
+      const key = Math.min(ca, cb) + '-' + Math.max(ca, cb);
+      if (!superWeights[key]) {
+        superWeights[key] = 0;
+        superEdges.push([Math.min(ca, cb), Math.max(ca, cb)]);
+      }
+      superWeights[key]++;
+    }
+  }
+
+  addStep('phase2', 'Phase 2: Build Super-Graph', 'phase2', assign, `
+    <p>In Phase 2, each community from Phase 1 becomes a <b>super-node</b>. Edges between communities become weighted edges between super-nodes. Internal edges become self-loops.</p>
+    <div class="formula-box">
+      <span class="label">Super-nodes:</span> ${commList.length}<br>
+      ${commList.map((c, i) => {
+        const members = [...c].sort((a,b)=>a-b);
+        return `S<sub>${i}</sub> = {${members.join(',')}} (self-loops: ${selfLoops[i]||0})`;
+      }).join('<br>')}
+      <span class="sep"></span>
+      <span class="label">Super-edges:</span><br>
+      ${superEdges.map(([a,b]) => {
+        const key = Math.min(a,b)+'-'+Math.max(a,b);
+        return `S<sub>${a}</sub> — S<sub>${b}</sub> (weight ${superWeights[key]})`;
+      }).join('<br>')}
+    </div>
+    <p>Modularity is preserved: Q = <span style="color:#4ade80;font-weight:700">${Qphase1.toFixed(4)}</span>.</p>
+    <p>We would now run Phase 1 again on this super-graph. Since each super-node's best move is to stay (only 1 bridge edge between each pair), <b>the algorithm converges</b>.</p>
+  `, { superGraph: { nodes: commList, edges: superEdges, weights: superWeights, selfLoops } });
+
+  // ── FINAL RESULT ───────────────────────────────────────────
+  addStep('result', 'Final Result', 'result', assign, `
+    <p>The Louvain algorithm has converged! It found <b>${phase1Comms.length} communities</b>:</p>
+    <ul class="community-list">${phase1Comms.map((c, i) => {
+      const members = [...c].sort((a,b)=>a-b);
+      const lc = EDGES.filter(([a,b]) => c.has(a) && c.has(b)).length;
+      const dc = members.reduce((s, n) => s + degree(n), 0);
+      return `<li><span class="dot" style="background:${COLORS[i]}"></span><b>{${members.join(', ')}}</b> — ${lc} internal edges, d<sub>c</sub>=${dc}</li>`;
+    }).join('')}</ul>
+    <div class="formula-box">
+      <span class="label">Final Modularity:</span><br><br>
+      Q = Σ [ L<sub>c</sub>/${m} − (d<sub>c</sub>/${2*m})² ]<br><br>
+      ${phase1Comms.map((c, i) => {
+        const members = [...c].sort((a,b)=>a-b);
+        const lc = EDGES.filter(([a,b]) => c.has(a) && c.has(b)).length;
+        const dc = members.reduce((s, n) => s + degree(n), 0);
+        return `&nbsp; C<sub>${i}</sub>: ${lc}/${m} − (${dc}/${2*m})² = ${(lc/m).toFixed(4)} − ${(dc/(2*m)).toFixed(4)}² = ${(lc/m - (dc/(2*m))**2).toFixed(4)}`;
+      }).join('<br>')}
+      <span class="sep"></span>
+      <span class="result">Q = ${Qphase1.toFixed(4)}</span>
+    </div>
+    <p>The algorithm successfully recovered the 4 planted communities from the network structure.</p>
+    <p>Use the timeline below to revisit any step.</p>
+  `);
+}
+
+buildSteps();
+
+// ── VISUALIZATION ───────────────────────────────────────────
+let currentStep = 0;
+const svg = document.getElementById('graphSvg');
+const ns = 'http://www.w3.org/2000/svg';
+
+// Force-directed layout with seeded RNG for consistency
+const nodePositions = [];
+const W = 700, H = 500;
+let _seed = 42;
+function seededRandom() { _seed = (_seed * 16807 + 0) % 2147483647; return _seed / 2147483647; }
+
+const clusterCenters = [
+  {x: W*0.25, y: H*0.3},
+  {x: W*0.75, y: H*0.3},
+  {x: W*0.75, y: H*0.7},
+  {x: W*0.25, y: H*0.7},
+];
+
+for (let i = 0; i < N; i++) {
+  const cluster = Math.floor(i / 4);
+  const inCluster = i % 4;
+  const angle = (inCluster / 4) * Math.PI * 2 + seededRandom() * 0.3;
+  const r = 40 + seededRandom() * 20;
+  nodePositions.push({
+    x: clusterCenters[cluster].x + Math.cos(angle) * r,
+    y: clusterCenters[cluster].y + Math.sin(angle) * r,
+    vx: 0, vy: 0
+  });
+}
+
+// Run force simulation
+function simulate(iterations) {
+  for (let iter = 0; iter < iterations; iter++) {
+    // Repulsion
+    for (let i = 0; i < N; i++) {
+      for (let j = i + 1; j < N; j++) {
+        let dx = nodePositions[i].x - nodePositions[j].x;
+        let dy = nodePositions[i].y - nodePositions[j].y;
+        let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        let force = 3000 / (dist * dist);
+        let fx = dx / dist * force;
+        let fy = dy / dist * force;
+        nodePositions[i].vx += fx;
+        nodePositions[i].vy += fy;
+        nodePositions[j].vx -= fx;
+        nodePositions[j].vy -= fy;
+      }
+    }
+    // Attraction along edges
+    for (const [a, b] of EDGES) {
+      let dx = nodePositions[b].x - nodePositions[a].x;
+      let dy = nodePositions[b].y - nodePositions[a].y;
+      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      let force = (dist - 80) * 0.05;
+      let fx = dx / dist * force;
+      let fy = dy / dist * force;
+      nodePositions[a].vx += fx;
+      nodePositions[a].vy += fy;
+      nodePositions[b].vx -= fx;
+      nodePositions[b].vy -= fy;
+    }
+    // Center gravity
+    for (let i = 0; i < N; i++) {
+      nodePositions[i].vx += (W / 2 - nodePositions[i].x) * 0.01;
+      nodePositions[i].vy += (H / 2 - nodePositions[i].y) * 0.01;
+    }
+    // Apply velocity with damping
+    const damping = 0.85;
+    for (let i = 0; i < N; i++) {
+      nodePositions[i].vx *= damping;
+      nodePositions[i].vy *= damping;
+      nodePositions[i].x += nodePositions[i].vx;
+      nodePositions[i].y += nodePositions[i].vy;
+      // Bounds
+      nodePositions[i].x = Math.max(30, Math.min(W - 30, nodePositions[i].x));
+      nodePositions[i].y = Math.max(30, Math.min(H - 30, nodePositions[i].y));
+    }
+  }
+}
+simulate(300);
+
+// Bridge edges set
+const bridgeSet = new Set(['1-4', '4-1', '7-8', '8-7', '11-12', '12-11']);
+function isBridge(a, b) {
+  return bridgeSet.has(a + '-' + b);
+}
+
+function renderGraph(step) {
+  svg.innerHTML = '';
+  const rect = document.getElementById('graphPanel').getBoundingClientRect();
+  const scaleX = rect.width / W;
+  const scaleY = rect.height / H;
+  const scale = Math.min(scaleX, scaleY, 1.3);
+  const offsetX = (rect.width - W * scale) / 2;
+  const offsetY = (rect.height - H * scale) / 2;
+
+  const g = document.createElementNS(ns, 'g');
+  g.setAttribute('transform', `translate(${offsetX},${offsetY}) scale(${scale})`);
+  svg.appendChild(g);
+
+  const s = steps[step];
+  const hlEdgeSet = new Set(s.highlightEdges.map(([a,b]) => a+'-'+b));
+
+  // Draw edges
+  for (const [a, b] of EDGES) {
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', nodePositions[a].x);
+    line.setAttribute('y1', nodePositions[a].y);
+    line.setAttribute('x2', nodePositions[b].x);
+    line.setAttribute('y2', nodePositions[b].y);
+    let cls = 'edge';
+    if (isBridge(a, b)) cls += ' bridge';
+    if (hlEdgeSet.has(a+'-'+b) || hlEdgeSet.has(b+'-'+a)) cls += ' highlight-edge';
+    line.setAttribute('class', cls);
+    g.appendChild(line);
+  }
+
+  // Draw nodes
+  for (let i = 0; i < N; i++) {
+    const comm = s.assignment[i];
+    // Find color index: use the smallest node in same community
+    let colorIdx = comm;
+    for (let j = 0; j < N; j++) {
+      if (s.assignment[j] === comm) { colorIdx = j; break; }
+    }
+
+    const circle = document.createElementNS(ns, 'circle');
+    circle.setAttribute('cx', nodePositions[i].x);
+    circle.setAttribute('cy', nodePositions[i].y);
+    circle.setAttribute('r', i === s.highlightNode ? 16 : 12);
+    circle.setAttribute('fill', COLORS[colorIdx % COLORS.length]);
+    circle.setAttribute('stroke', i === s.highlightNode ? '#f7c948' : '#0f1117');
+    circle.setAttribute('stroke-width', i === s.highlightNode ? 3 : 2);
+    g.appendChild(circle);
+
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', nodePositions[i].x);
+    text.setAttribute('y', nodePositions[i].y + 4);
+    text.setAttribute('class', 'node-label');
+    text.textContent = i;
+    g.appendChild(text);
+  }
+}
+
+// ── TIMELINE & NAV ──────────────────────────────────────────
+function buildTimeline() {
+  const tl = document.getElementById('timeline');
+  tl.innerHTML = '';
+  const milestoneTypes = new Set(['intro', 'phase2', 'result']);
+  for (let i = 0; i < steps.length; i++) {
+    const div = document.createElement('div');
+    div.className = 'tl-step' + (milestoneTypes.has(steps[i].type) || steps[i].title.includes('Complete') ? ' milestone' : '');
+    div.innerHTML = `<span class="tl-dot"></span><span class="tl-tooltip">${steps[i].title}</span>`;
+    div.onclick = () => goStep(i);
+    tl.appendChild(div);
+  }
+}
+
+function goStep(idx) {
+  if (idx < 0 || idx >= steps.length) return;
+  currentStep = idx;
+  const s = steps[idx];
+
+  // Update UI
+  document.getElementById('stepLabel').textContent = `Step ${idx + 1} / ${steps.length}`;
+  document.getElementById('sideTitle').innerHTML = s.title +
+    `<span class="badge badge-${s.badge}">${s.badge === 'phase1' ? 'Phase 1' : s.badge === 'phase2' ? 'Phase 2' : s.badge === 'result' ? 'Result' : 'Intro'}</span>`;
+  document.getElementById('explanation').innerHTML = s.html;
+  document.getElementById('qVal').textContent = s.Q.toFixed(4);
+  document.getElementById('phaseLabel').textContent =
+    s.badge === 'phase1' ? 'Phase 1 — Local Optimization' :
+    s.badge === 'phase2' ? 'Phase 2 — Aggregation' :
+    s.badge === 'result' ? 'Final Result' : 'Introduction';
+
+  // Update timeline
+  const tlSteps = document.querySelectorAll('.tl-step');
+  tlSteps.forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+    el.classList.toggle('done', i < idx);
+  });
+
+  // Update graph info
+  const comms = s.communities;
+  document.getElementById('graphInfo').innerHTML =
+    `Nodes: <span>${N}</span> | Edges: <span>${m}</span> | Communities: <span>${comms.length}</span>`;
+
+  // Nav buttons
+  document.getElementById('btnPrev').disabled = idx === 0;
+  document.getElementById('btnFirst').disabled = idx === 0;
+  document.getElementById('btnNext').disabled = idx === steps.length - 1;
+  document.getElementById('btnLast').disabled = idx === steps.length - 1;
+
+  renderGraph(idx);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goStep(currentStep + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goStep(currentStep - 1); }
+  if (e.key === 'Home') { e.preventDefault(); goStep(0); }
+  if (e.key === 'End') { e.preventDefault(); goStep(steps.length - 1); }
+});
+
+// Resize handler
+window.addEventListener('resize', () => renderGraph(currentStep));
+
+// Initialize
+buildTimeline();
+goStep(0);
+</script>
+</body>
+</html>

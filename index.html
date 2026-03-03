@@ -57,12 +57,52 @@ svg{width:100%;height:100%;display:block}
 .graph-info span{color:#7eb8f7}
 .modularity-display{position:absolute;top:12px;right:12px;background:#1c1f2ecc;padding:8px 14px;border-radius:8px;font-size:.85rem;border:1px solid #2a2d3a}
 .modularity-display .q-val{color:#4ade80;font-weight:700;font-size:1.1rem}
+
+/* ── Chat Panel ────────────────────────────────── */
+.chat-toggle{background:none;border:1px solid #3b5998;color:#7eb8f7;border-radius:6px;padding:5px 14px;font-size:.8rem;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px}
+.chat-toggle:hover{background:#3b5998;color:#fff}
+.chat-toggle.active{background:#3b5998;color:#fff}
+.chat-panel{display:none;flex-direction:column;border-top:1px solid #2a2d3a;background:#12141e;flex-shrink:0;height:340px;min-height:200px}
+.chat-panel.open{display:flex}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#1a1d2e;border-bottom:1px solid #2a2d3a;flex-shrink:0}
+.chat-header span{font-size:.8rem;color:#7eb8f7;font-weight:600}
+.chat-header button{background:none;border:none;color:#666;cursor:pointer;font-size:1rem;padding:2px 6px}
+.chat-header button:hover{color:#e0e0e0}
+.chat-messages{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{padding:8px 12px;border-radius:10px;font-size:.82rem;line-height:1.5;max-width:92%;word-wrap:break-word}
+.chat-msg.user{background:#2a3a5c;color:#c8d6e5;align-self:flex-end;border-bottom-right-radius:3px}
+.chat-msg.assistant{background:#1c1f2e;color:#d0d0d0;align-self:flex-start;border-bottom-left-radius:3px;border:1px solid #2a2d3a}
+.chat-msg.assistant p{margin:0 0 6px}
+.chat-msg.assistant p:last-child{margin:0}
+.chat-msg.assistant code{background:#252836;padding:1px 5px;border-radius:3px;font-size:.78rem}
+.chat-msg.assistant strong{color:#7eb8f7}
+.chat-msg.system{background:transparent;color:#555;font-size:.75rem;align-self:center;text-align:center;padding:4px}
+.chat-msg.error{background:#2a1a1a;color:#e74c3c;border:1px solid #3a1a1a}
+.chat-msg .typing{display:inline-block;width:6px;height:6px;background:#7eb8f7;border-radius:50%;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+.chat-input-row{display:flex;gap:6px;padding:8px 12px;border-top:1px solid #2a2d3a;flex-shrink:0;background:#161822}
+.chat-input-row input{flex:1;background:#1c1f2e;border:1px solid #2a2d3a;border-radius:8px;padding:8px 12px;color:#e0e0e0;font-size:.82rem;outline:none}
+.chat-input-row input:focus{border-color:#3b5998}
+.chat-input-row button{background:#3b5998;border:none;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:.82rem;white-space:nowrap}
+.chat-input-row button:hover{background:#4a6ab5}
+.chat-input-row button:disabled{opacity:.4;cursor:default}
+.api-key-bar{padding:10px 14px;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.api-key-bar label{font-size:.72rem;color:#666}
+.api-key-bar .key-row{display:flex;gap:6px}
+.api-key-bar input{flex:1;background:#1c1f2e;border:1px solid #2a2d3a;border-radius:6px;padding:6px 10px;color:#e0e0e0;font-size:.78rem;outline:none;font-family:monospace}
+.api-key-bar button{background:#2d4a1e;border:none;color:#6ee76e;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:.75rem}
+.api-key-bar button:hover{background:#3a5c28}
+.api-key-bar .status{font-size:.7rem;color:#4ade80}
+.api-key-bar .status.err{color:#e74c3c}
+.resize-handle{height:4px;cursor:ns-resize;background:transparent;flex-shrink:0}
+.resize-handle:hover{background:#3b5998}
 </style>
 </head>
 <body>
 <header>
   <h1>Louvain Community Detection</h1>
   <span class="step-label" id="stepLabel">Step 0 / 0</span>
+  <button class="chat-toggle" id="chatToggle" onclick="toggleChat()">&#x1F4AC; Ask AI</button>
 </header>
 <div class="main">
   <div class="graph-panel" id="graphPanel">
@@ -73,6 +113,28 @@ svg{width:100%;height:100%;display:block}
   <div class="side-panel">
     <h2 id="sideTitle">Introduction</h2>
     <div class="explanation" id="explanation"></div>
+    <div class="chat-panel" id="chatPanel">
+      <div class="resize-handle" id="chatResize"></div>
+      <div class="chat-header">
+        <span>Ask about the algorithm</span>
+        <button onclick="toggleChat()" title="Close">&times;</button>
+      </div>
+      <div id="apiKeyBar" class="api-key-bar">
+        <label>Anthropic API Key (stored locally, never sent elsewhere)</label>
+        <div class="key-row">
+          <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+          <button onclick="saveApiKey()">Save</button>
+        </div>
+        <div class="status" id="apiKeyStatus"></div>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg system">Ask anything about the current step, why the algorithm made a specific choice, or how the math works.</div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="e.g. Why did node 0 join this community?" onkeydown="if(event.key==='Enter')sendChat()" />
+        <button id="chatSend" onclick="sendChat()">Send</button>
+      </div>
+    </div>
   </div>
 </div>
 <div class="timeline">
@@ -648,6 +710,198 @@ window.addEventListener('resize', () => renderGraph(currentStep));
 // Initialize
 buildTimeline();
 goStep(0);
+
+// ── CHAT ────────────────────────────────────────────────────
+let chatOpen = false;
+let chatHistory = [];
+let apiKey = localStorage.getItem('louvain_api_key') || '';
+
+if (apiKey) {
+  document.getElementById('apiKeyInput').value = '••••••••••••';
+  document.getElementById('apiKeyStatus').textContent = 'Key saved';
+  document.getElementById('apiKeyBar').style.display = 'none';
+}
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  document.getElementById('chatPanel').classList.toggle('open', chatOpen);
+  document.getElementById('chatToggle').classList.toggle('active', chatOpen);
+  if (chatOpen) document.getElementById('chatInput').focus();
+}
+
+function saveApiKey() {
+  const input = document.getElementById('apiKeyInput');
+  const key = input.value.trim();
+  if (!key || !key.startsWith('sk-ant-')) {
+    document.getElementById('apiKeyStatus').textContent = 'Invalid key — must start with sk-ant-';
+    document.getElementById('apiKeyStatus').className = 'status err';
+    return;
+  }
+  apiKey = key;
+  localStorage.setItem('louvain_api_key', key);
+  input.value = '••••••••••••';
+  document.getElementById('apiKeyStatus').textContent = 'Key saved';
+  document.getElementById('apiKeyStatus').className = 'status';
+  setTimeout(() => { document.getElementById('apiKeyBar').style.display = 'none'; }, 600);
+}
+
+function buildSystemPrompt() {
+  const s = steps[currentStep];
+  const allStepSummaries = steps.map((st, i) =>
+    `Step ${i+1}: [${st.badge}] ${st.title} (Q=${st.Q.toFixed(4)}, ${st.communities.length} communities)`
+  ).join('\n');
+
+  const commDesc = s.communities.map((c, i) => {
+    const members = [...c].sort((a,b)=>a-b);
+    return `  Community ${i}: {${members.join(',')}}`;
+  }).join('\n');
+
+  const degreeList = Array.from({length: N}, (_, i) => `${i}:${degree(i)}`).join(', ');
+
+  const edgeList = EDGES.map(([a,b]) => `${a}-${b}`).join(', ');
+
+  return `You are an expert assistant embedded in an interactive Louvain algorithm visualization. Answer questions about the algorithm, its steps, and the math. Be concise (2-4 short paragraphs max). Use plain language but be precise with numbers.
+
+GRAPH:
+- 16 nodes (0-15), ${m} edges
+- Edges: ${edgeList}
+- Node degrees: ${degreeList}
+- Bridge edges (inter-cluster): 1-4, 7-8, 11-12
+- Natural communities: A={0,1,2,3}, B={4,5,6,7}, C={8,9,10,11}, D={12,13,14,15}
+
+MODULARITY FORMULA:
+Q = Σ_c [ L_c/m - (d_c/2m)² ]  where L_c = internal edges, d_c = sum of degrees, m = ${m}
+ΔQ (gain for moving node i to community C) = k_{i,in}/m - (Σ_tot × k_i)/(2m²)
+  k_{i,in} = edges from i to C, Σ_tot = sum of degrees in C (excl. i), k_i = degree of i
+
+ALL STEPS:
+${allStepSummaries}
+
+CURRENT STATE (Step ${currentStep + 1}/${steps.length}):
+Title: ${s.title}
+Phase: ${s.badge}
+Q = ${s.Q.toFixed(4)}
+Communities (${s.communities.length}):
+${commDesc}
+Assignment: [${s.assignment.join(',')}]
+${s.highlightNode >= 0 ? `Highlighted node: ${s.highlightNode}` : ''}
+
+The step explanation shown to the user:
+${s.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+
+When doing math, show the actual numbers from this graph. Reference specific nodes, edges, and community memberships.`;
+}
+
+function addChatMsg(role, content) {
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  if (role === 'assistant') {
+    // Simple markdown: bold, code, paragraphs
+    const html = content
+      .split('\n\n').map(p => `<p>${p}</p>`).join('')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`(.+?)`/g, '<code>$1</code>');
+    div.innerHTML = html;
+  } else {
+    div.textContent = content;
+  }
+  document.getElementById('chatMessages').appendChild(div);
+  document.getElementById('chatMessages').scrollTop = 9999;
+  return div;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!apiKey) {
+    document.getElementById('apiKeyBar').style.display = '';
+    document.getElementById('apiKeyStatus').textContent = 'Please add your API key first';
+    document.getElementById('apiKeyStatus').className = 'status err';
+    document.getElementById('apiKeyInput').focus();
+    return;
+  }
+
+  input.value = '';
+  addChatMsg('user', text);
+
+  chatHistory.push({ role: 'user', content: text });
+
+  // Show typing indicator
+  const typingDiv = addChatMsg('assistant', '');
+  typingDiv.innerHTML = '<span class="typing"></span> <span class="typing" style="animation-delay:.2s"></span> <span class="typing" style="animation-delay:.4s"></span>';
+
+  document.getElementById('chatSend').disabled = true;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        system: buildSystemPrompt(),
+        messages: chatHistory.slice(-10) // keep last 10 for context window
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API error ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    const reply = data.content?.[0]?.text || 'No response.';
+
+    typingDiv.remove();
+    addChatMsg('assistant', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+
+  } catch (e) {
+    typingDiv.remove();
+    const errDiv = addChatMsg('error', e.message);
+    errDiv.className = 'chat-msg error';
+    // Remove failed exchange from history
+    chatHistory.pop();
+
+    if (e.message.includes('401') || e.message.includes('auth') || e.message.includes('key')) {
+      document.getElementById('apiKeyBar').style.display = '';
+      apiKey = '';
+      localStorage.removeItem('louvain_api_key');
+    }
+  } finally {
+    document.getElementById('chatSend').disabled = false;
+    document.getElementById('chatInput').focus();
+  }
+}
+
+// Resize handle for chat panel
+const chatResize = document.getElementById('chatResize');
+let resizing = false;
+chatResize.addEventListener('mousedown', e => {
+  resizing = true;
+  e.preventDefault();
+  document.addEventListener('mousemove', onResize);
+  document.addEventListener('mouseup', () => { resizing = false; document.removeEventListener('mousemove', onResize); }, { once: true });
+});
+function onResize(e) {
+  if (!resizing) return;
+  const panel = document.getElementById('chatPanel');
+  const rect = panel.parentElement.getBoundingClientRect();
+  const newH = rect.bottom - e.clientY;
+  panel.style.height = Math.max(150, Math.min(newH, rect.height - 100)) + 'px';
+}
+
+// Override keyboard nav so it doesn't trigger while typing in chat
+document.addEventListener('keydown', e => {
+  if (document.activeElement.tagName === 'INPUT') e.stopImmediatePropagation();
+}, true);
 </script>
 </body>
 </html>

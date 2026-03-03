@@ -87,13 +87,9 @@ svg{width:100%;height:100%;display:block}
 .chat-input-row button:hover{background:#4a6ab5}
 .chat-input-row button:disabled{opacity:.4;cursor:default}
 .api-key-bar{padding:10px 14px;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
-.api-key-bar label{font-size:.72rem;color:#666}
-.api-key-bar .key-row{display:flex;gap:6px}
-.api-key-bar input{flex:1;background:#1c1f2e;border:1px solid #2a2d3a;border-radius:6px;padding:6px 10px;color:#e0e0e0;font-size:.78rem;outline:none;font-family:monospace}
-.api-key-bar button{background:#2d4a1e;border:none;color:#6ee76e;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:.75rem}
-.api-key-bar button:hover{background:#3a5c28}
-.api-key-bar .status{font-size:.7rem;color:#4ade80}
-.api-key-bar .status.err{color:#e74c3c}
+.chat-suggestions{display:flex;flex-wrap:wrap;gap:4px;padding:6px 14px;flex-shrink:0;border-top:1px solid #1a1d2e}
+.chat-suggestions button{background:#1c1f2e;border:1px solid #2a2d3a;color:#888;border-radius:12px;padding:3px 10px;font-size:.72rem;cursor:pointer;transition:all .15s}
+.chat-suggestions button:hover{border-color:#3b5998;color:#7eb8f7}
 .resize-handle{height:4px;cursor:ns-resize;background:transparent;flex-shrink:0}
 .resize-handle:hover{background:#3b5998}
 </style>
@@ -119,17 +115,10 @@ svg{width:100%;height:100%;display:block}
         <span>Ask about the algorithm</span>
         <button onclick="toggleChat()" title="Close">&times;</button>
       </div>
-      <div id="apiKeyBar" class="api-key-bar">
-        <label>Anthropic API Key (stored locally, never sent elsewhere)</label>
-        <div class="key-row">
-          <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
-          <button onclick="saveApiKey()">Save</button>
-        </div>
-        <div class="status" id="apiKeyStatus"></div>
-      </div>
       <div class="chat-messages" id="chatMessages">
         <div class="chat-msg system">Ask anything about the current step, why the algorithm made a specific choice, or how the math works.</div>
       </div>
+      <div class="chat-suggestions" id="chatSuggestions"></div>
       <div class="chat-input-row">
         <input type="text" id="chatInput" placeholder="e.g. Why did node 0 join this community?" onkeydown="if(event.key==='Enter')sendChat()" />
         <button id="chatSend" onclick="sendChat()">Send</button>
@@ -711,174 +700,347 @@ window.addEventListener('resize', () => renderGraph(currentStep));
 buildTimeline();
 goStep(0);
 
-// ── CHAT ────────────────────────────────────────────────────
+// ── CHAT — LOCAL Q&A ENGINE ─────────────────────────────────
 let chatOpen = false;
-let chatHistory = [];
-let apiKey = localStorage.getItem('louvain_api_key') || '';
-
-if (apiKey) {
-  document.getElementById('apiKeyInput').value = '••••••••••••';
-  document.getElementById('apiKeyStatus').textContent = 'Key saved';
-  document.getElementById('apiKeyBar').style.display = 'none';
-}
 
 function toggleChat() {
   chatOpen = !chatOpen;
   document.getElementById('chatPanel').classList.toggle('open', chatOpen);
   document.getElementById('chatToggle').classList.toggle('active', chatOpen);
-  if (chatOpen) document.getElementById('chatInput').focus();
-}
-
-function saveApiKey() {
-  const input = document.getElementById('apiKeyInput');
-  const key = input.value.trim();
-  if (!key || !key.startsWith('sk-ant-')) {
-    document.getElementById('apiKeyStatus').textContent = 'Invalid key — must start with sk-ant-';
-    document.getElementById('apiKeyStatus').className = 'status err';
-    return;
+  if (chatOpen) {
+    document.getElementById('chatInput').focus();
+    updateSuggestions();
   }
-  apiKey = key;
-  localStorage.setItem('louvain_api_key', key);
-  input.value = '••••••••••••';
-  document.getElementById('apiKeyStatus').textContent = 'Key saved';
-  document.getElementById('apiKeyStatus').className = 'status';
-  setTimeout(() => { document.getElementById('apiKeyBar').style.display = 'none'; }, 600);
-}
-
-function buildSystemPrompt() {
-  const s = steps[currentStep];
-  const allStepSummaries = steps.map((st, i) =>
-    `Step ${i+1}: [${st.badge}] ${st.title} (Q=${st.Q.toFixed(4)}, ${st.communities.length} communities)`
-  ).join('\n');
-
-  const commDesc = s.communities.map((c, i) => {
-    const members = [...c].sort((a,b)=>a-b);
-    return `  Community ${i}: {${members.join(',')}}`;
-  }).join('\n');
-
-  const degreeList = Array.from({length: N}, (_, i) => `${i}:${degree(i)}`).join(', ');
-
-  const edgeList = EDGES.map(([a,b]) => `${a}-${b}`).join(', ');
-
-  return `You are an expert assistant embedded in an interactive Louvain algorithm visualization. Answer questions about the algorithm, its steps, and the math. Be concise (2-4 short paragraphs max). Use plain language but be precise with numbers.
-
-GRAPH:
-- 16 nodes (0-15), ${m} edges
-- Edges: ${edgeList}
-- Node degrees: ${degreeList}
-- Bridge edges (inter-cluster): 1-4, 7-8, 11-12
-- Natural communities: A={0,1,2,3}, B={4,5,6,7}, C={8,9,10,11}, D={12,13,14,15}
-
-MODULARITY FORMULA:
-Q = Σ_c [ L_c/m - (d_c/2m)² ]  where L_c = internal edges, d_c = sum of degrees, m = ${m}
-ΔQ (gain for moving node i to community C) = k_{i,in}/m - (Σ_tot × k_i)/(2m²)
-  k_{i,in} = edges from i to C, Σ_tot = sum of degrees in C (excl. i), k_i = degree of i
-
-ALL STEPS:
-${allStepSummaries}
-
-CURRENT STATE (Step ${currentStep + 1}/${steps.length}):
-Title: ${s.title}
-Phase: ${s.badge}
-Q = ${s.Q.toFixed(4)}
-Communities (${s.communities.length}):
-${commDesc}
-Assignment: [${s.assignment.join(',')}]
-${s.highlightNode >= 0 ? `Highlighted node: ${s.highlightNode}` : ''}
-
-The step explanation shown to the user:
-${s.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
-
-When doing math, show the actual numbers from this graph. Reference specific nodes, edges, and community memberships.`;
 }
 
 function addChatMsg(role, content) {
   const div = document.createElement('div');
   div.className = `chat-msg ${role}`;
   if (role === 'assistant') {
-    // Simple markdown: bold, code, paragraphs
-    const html = content
-      .split('\n\n').map(p => `<p>${p}</p>`).join('')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`(.+?)`/g, '<code>$1</code>');
-    div.innerHTML = html;
+    div.innerHTML = content;
   } else {
     div.textContent = content;
   }
-  document.getElementById('chatMessages').appendChild(div);
-  document.getElementById('chatMessages').scrollTop = 9999;
+  const container = document.getElementById('chatMessages');
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
   return div;
 }
 
-async function sendChat() {
+// ── Context helpers ──────────────────────────────────────────
+function neighbors(node) {
+  const n = [];
+  for (const [a, b] of EDGES) {
+    if (a === node) n.push(b);
+    if (b === node) n.push(a);
+  }
+  return n.sort((a,b)=>a-b);
+}
+
+function communityOfNode(node, assign) {
+  const comm = [];
+  const c = assign[node];
+  for (let i = 0; i < assign.length; i++) if (assign[i] === c) comm.push(i);
+  return comm.sort((a,b)=>a-b);
+}
+
+function internalEdges(members) {
+  const s = new Set(members);
+  let count = 0;
+  for (const [a,b] of EDGES) if (s.has(a) && s.has(b)) count++;
+  return count;
+}
+
+function sumDegrees(members) {
+  return members.reduce((s, n) => s + degree(n), 0);
+}
+
+function computeDeltaQ(node, targetMembers, assign) {
+  const s = new Set(targetMembers);
+  s.delete(node);
+  let k_in = 0;
+  for (const [a,b] of EDGES) {
+    if (a === node && s.has(b)) k_in++;
+    if (b === node && s.has(a)) k_in++;
+  }
+  let sigma_tot = 0;
+  for (const n of s) sigma_tot += degree(n);
+  const k_i = degree(node);
+  return { dq: k_in / m - (sigma_tot * k_i) / (2*m*m), k_in, sigma_tot, k_i };
+}
+
+// ── Extract numbers from question ────────────────────────────
+function extractNodes(q) {
+  const matches = q.match(/\bnode\s*(\d+)/gi) || [];
+  return matches.map(m => parseInt(m.replace(/\D/g, ''))).filter(n => n >= 0 && n < N);
+}
+
+function extractAnyNumbers(q) {
+  return [...q.matchAll(/\b(\d+)\b/g)].map(m => parseInt(m[1])).filter(n => n >= 0 && n < N);
+}
+
+// ── Answer generator ─────────────────────────────────────────
+function answerQuestion(q) {
+  const s = steps[currentStep];
+  const assign = s.assignment;
+  const ql = q.toLowerCase().trim();
+  const nodes = extractNodes(ql);
+  const anyNums = extractAnyNumbers(ql);
+
+  // ── About a specific node ──
+  if (nodes.length >= 1 || (anyNums.length >= 1 && (ql.includes('node') || ql.includes('degree') || ql.includes('neighbor') || ql.includes('communit')))) {
+    const nd = nodes.length ? nodes[0] : anyNums[0];
+    if (nd < 0 || nd >= N) return `Node ${nd} doesn't exist. This graph has nodes 0–15.`;
+
+    const deg = degree(nd);
+    const nbrs = neighbors(nd);
+    const comm = communityOfNode(nd, assign);
+    const commInternal = internalEdges(comm);
+    const commDeg = sumDegrees(comm);
+
+    // Why did node X move / join?
+    if (ql.includes('why') || ql.includes('move') || ql.includes('join') || ql.includes('chose') || ql.includes('pick')) {
+      const edgesToComm = nbrs.filter(n => assign[n] === assign[nd] && n !== nd);
+      const edgesOutside = nbrs.filter(n => assign[n] !== assign[nd]);
+      const { dq, k_in, sigma_tot, k_i } = computeDeltaQ(nd, comm, assign);
+
+      let explanation = `<p><strong>Node ${nd}</strong> is in community {${comm.join(', ')}} with <strong>${edgesToComm.length}</strong> edge(s) to community members and <strong>${edgesOutside.length}</strong> edge(s) to nodes outside.</p>`;
+
+      if (comm.length > 1) {
+        explanation += `<p>The modularity gain for being in this community:<br>
+          <code>ΔQ = k_in/m − (Σ_tot × k_i)/(2m²)</code><br>
+          <code>&nbsp;&nbsp;&nbsp;= ${k_in}/${m} − (${sigma_tot} × ${k_i})/(2 × ${m}²)</code><br>
+          <code>&nbsp;&nbsp;&nbsp;= ${(k_in/m).toFixed(4)} − ${(sigma_tot*k_i/(2*m*m)).toFixed(4)} = <strong>${dq.toFixed(4)}</strong></code></p>`;
+        explanation += `<p>Node ${nd} has ${edgesToComm.length} internal connection(s) (to ${edgesToComm.join(', ')||'none'}) vs ${edgesOutside.length} external (to ${edgesOutside.join(', ')||'none'}), making this community the best fit — it maximizes internal density.</p>`;
+      } else {
+        explanation += `<p>Node ${nd} is currently alone. It hasn't been moved yet, or no neighbor community offers a positive ΔQ gain.</p>`;
+      }
+      return explanation;
+    }
+
+    // What if node X moved elsewhere?
+    if (ql.includes('what if') || ql.includes('what would') || ql.includes('move to') || ql.includes('instead')) {
+      const targetNode = nodes.length >= 2 ? nodes[1] : (anyNums.length >= 2 ? anyNums[1] : -1);
+      let result = `<p><strong>Node ${nd}</strong> (degree ${deg}) is currently in {${comm.join(', ')}}. Let's compare alternatives:</p>`;
+
+      // Compute ΔQ for each neighbor community
+      const seen = new Set();
+      const options = [];
+      for (const nb of nbrs) {
+        const nc = assign[nb];
+        if (seen.has(nc) || nc === assign[nd]) continue;
+        seen.add(nc);
+        const targetMem = [];
+        for (let i = 0; i < N; i++) if (assign[i] === nc) targetMem.push(i);
+        const { dq, k_in, sigma_tot, k_i } = computeDeltaQ(nd, targetMem, assign);
+        options.push({ members: targetMem, dq, k_in, sigma_tot });
+      }
+      options.sort((a, b) => b.dq - a.dq);
+
+      for (const opt of options) {
+        result += `<p>→ Move to {${opt.members.join(', ')}}: k_in=${opt.k_in}, Σ_tot=${opt.sigma_tot} → <strong>ΔQ = ${opt.dq.toFixed(4)}</strong> ${opt.dq > 0 ? '✓' : '✗'}</p>`;
+      }
+      if (options.length === 0) result += `<p>No alternative communities among neighbors.</p>`;
+      return result;
+    }
+
+    // Default: node info
+    return `<p><strong>Node ${nd}</strong></p>
+      <p>Degree: <strong>${deg}</strong><br>
+      Neighbors: {${nbrs.join(', ')}}<br>
+      Current community: {${comm.join(', ')}}<br>
+      Internal edges in community: ${commInternal}<br>
+      Community total degree (d_c): ${commDeg}<br>
+      Bridge node: <strong>${nbrs.some(n => Math.floor(n/4) !== Math.floor(nd/4)) ? 'Yes' : 'No'}</strong> (has cross-cluster edges)</p>`;
+  }
+
+  // ── Modularity formula ──
+  if (ql.includes('formula') || ql.includes('modularity') && (ql.includes('what') || ql.includes('explain') || ql.includes('how') || ql.includes('mean'))) {
+    const comms = s.communities;
+    let breakdown = comms.map((c, i) => {
+      const mem = [...c].sort((a,b)=>a-b);
+      const lc = internalEdges(mem);
+      const dc = sumDegrees(mem);
+      const contrib = lc/m - (dc/(2*m))**2;
+      return `C${i} {${mem.join(',')}}: L_c=${lc}, d_c=${dc} → ${lc}/${m} − (${dc}/${2*m})² = <strong>${contrib.toFixed(4)}</strong>`;
+    }).join('<br>');
+
+    return `<p><strong>Modularity Q</strong> measures how well the network is partitioned. Higher is better (max ~1, typically 0.3–0.7 is good).</p>
+      <p><code>Q = Σ [ L_c/m − (d_c/2m)² ]</code></p>
+      <p>First term <code>L_c/m</code>: fraction of edges inside community c. Rewards dense communities.<br>
+      Second term <code>(d_c/2m)²</code>: expected fraction if edges were random. Penalizes large communities.</p>
+      <p><strong>Current breakdown (Q = ${s.Q.toFixed(4)}):</strong><br>${breakdown}</p>`;
+  }
+
+  // ── Delta Q ──
+  if (ql.includes('delta') || ql.includes('gain') || ql.includes('Δq') || ql.includes('dq')) {
+    return `<p><strong>Modularity gain ΔQ</strong> measures how much Q improves when moving node i to community C:</p>
+      <p><code>ΔQ = k_{i,in}/m − (Σ_tot × k_i)/(2m²)</code></p>
+      <p><strong>k_{i,in}</strong>: edges from node i to nodes already in C (reward for connections)<br>
+      <strong>Σ_tot</strong>: sum of degrees of nodes in C (penalty for community size)<br>
+      <strong>k_i</strong>: degree of node i<br>
+      <strong>m</strong>: total edges = ${m}</p>
+      <p>The node moves to whichever community gives the <strong>largest positive ΔQ</strong>. If all ΔQ ≤ 0, the node stays put.</p>`;
+  }
+
+  // ── Phase 1 ──
+  if (ql.includes('phase 1') || ql.includes('phase one') || ql.includes('local') && ql.includes('optim')) {
+    return `<p><strong>Phase 1: Local Optimization</strong></p>
+      <p>For each node, the algorithm:</p>
+      <p>1. Computes ΔQ for moving to each <strong>neighbor's</strong> community<br>
+      2. Picks the move with the <strong>largest positive ΔQ</strong><br>
+      3. If ΔQ > 0, makes the move; otherwise the node stays</p>
+      <p>This repeats in passes over all nodes until <strong>no node wants to move</strong> (convergence). In our graph, Phase 1 discovers the 4 natural communities since internal edges (5 per cluster) far outweigh bridge edges (1 each).</p>`;
+  }
+
+  // ── Phase 2 ──
+  if (ql.includes('phase 2') || ql.includes('phase two') || ql.includes('aggregat') || ql.includes('super')) {
+    const comms = s.communities;
+    return `<p><strong>Phase 2: Aggregation</strong></p>
+      <p>Each community from Phase 1 becomes a <strong>super-node</strong>. Edges between different communities become weighted super-edges. Edges within a community become self-loops (preserving modularity).</p>
+      <p>Currently there are <strong>${comms.length} communities</strong>, so the super-graph would have ${comms.length} nodes. Phase 1 then runs on this smaller graph.</p>
+      <p>This hierarchical coarsening is what makes Louvain efficient on massive networks — each level shrinks the graph dramatically.</p>`;
+  }
+
+  // ── Bridge edges ──
+  if (ql.includes('bridge') || ql.includes('dashed') || ql.includes('inter') && ql.includes('edge')) {
+    return `<p><strong>Bridge edges</strong> (shown dashed) connect different natural clusters:</p>
+      <p>• <strong>1 — 4</strong>: connects cluster A {0,1,2,3} to cluster B {4,5,6,7}<br>
+      • <strong>7 — 8</strong>: connects cluster B to cluster C {8,9,10,11}<br>
+      • <strong>11 — 12</strong>: connects cluster C to cluster D {12,13,14,15}</p>
+      <p>Each cluster has 5 internal edges but only 1 bridge edge, so the modularity gain from grouping nodes with their cluster is much higher than pulling a node across a bridge. That's why the algorithm correctly separates them.</p>`;
+  }
+
+  // ── Convergence ──
+  if (ql.includes('converg') || ql.includes('stop') || ql.includes('terminat') || ql.includes('when does it end')) {
+    return `<p><strong>Convergence</strong> happens when no single node can improve modularity by switching communities.</p>
+      <p>Phase 1 converges when a full pass over all ${N} nodes produces <strong>zero moves</strong>. Then Phase 2 aggregates, and the cycle repeats until the super-graph Phase 1 also produces no moves.</p>
+      <p>In our graph, Phase 1 finds 4 communities. The resulting 4-node super-graph has only 1 edge between each adjacent pair, so no super-node benefits from merging → full convergence. Final Q = <strong>${steps[steps.length-1].Q.toFixed(4)}</strong>.</p>`;
+  }
+
+  // ── Current step ──
+  if (ql.includes('this step') || ql.includes('current step') || ql.includes('what is happening') || ql.includes('what\'s happening') || ql.includes('explain this')) {
+    const plainText = s.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const comms = s.communities;
+    let commList = comms.map((c, i) => {
+      const mem = [...c].sort((a,b)=>a-b);
+      return `{${mem.join(', ')}}`;
+    }).join(', ');
+    return `<p><strong>Step ${currentStep+1}: ${s.title}</strong> <em>(${s.badge})</em></p>
+      <p>Q = <strong>${s.Q.toFixed(4)}</strong> | Communities: <strong>${comms.length}</strong> — ${commList}</p>
+      ${s.highlightNode >= 0 ? `<p>Focus is on <strong>node ${s.highlightNode}</strong> (degree ${degree(s.highlightNode)}).</p>` : ''}
+      <p>In the timeline, this is step ${currentStep+1} of ${steps.length}. Use the arrow keys or timeline to navigate.</p>`;
+  }
+
+  // ── Community count / list ──
+  if (ql.includes('how many communit') || ql.includes('list communit') || ql.includes('what communit') || ql.includes('current communit') || ql.includes('show communit')) {
+    const comms = s.communities;
+    let list = comms.map((c, i) => {
+      const mem = [...c].sort((a,b)=>a-b);
+      const lc = internalEdges(mem);
+      const dc = sumDegrees(mem);
+      return `<strong>C${i}</strong>: {${mem.join(', ')}} — ${lc} internal edges, d_c=${dc}`;
+    }).join('<br>');
+    return `<p>There are currently <strong>${comms.length} communities</strong>:</p><p>${list}</p>
+      <p>Q = <strong>${s.Q.toFixed(4)}</strong></p>`;
+  }
+
+  // ── Compare two nodes ──
+  if (nodes.length >= 2 || anyNums.length >= 2) {
+    const a = nodes.length >= 2 ? nodes[0] : anyNums[0];
+    const b = nodes.length >= 2 ? nodes[1] : anyNums[1];
+    if (a >= 0 && a < N && b >= 0 && b < N) {
+      const commA = communityOfNode(a, assign);
+      const commB = communityOfNode(b, assign);
+      const sameCom = assign[a] === assign[b];
+      const connected = EDGES.some(([x,y]) => (x===a&&y===b)||(x===b&&y===a));
+      return `<p><strong>Node ${a}</strong>: degree ${degree(a)}, neighbors {${neighbors(a).join(', ')}}, community {${commA.join(', ')}}<br>
+        <strong>Node ${b}</strong>: degree ${degree(b)}, neighbors {${neighbors(b).join(', ')}}, community {${commB.join(', ')}}</p>
+        <p>Connected: <strong>${connected ? 'Yes' : 'No'}</strong><br>
+        Same community: <strong>${sameCom ? 'Yes' : 'No'}</strong></p>
+        ${!sameCom ? `<p>They're in different communities because the internal connections within their respective clusters outweigh the potential gain of merging.</p>` : `<p>They share a community because they have strong mutual connectivity — being together increases internal edge density.</p>`}`;
+    }
+  }
+
+  // ── How does Louvain work (general) ──
+  if (ql.includes('how') && (ql.includes('louvain') || ql.includes('algorithm') || ql.includes('work'))) {
+    return `<p>The <strong>Louvain algorithm</strong> finds communities by maximizing modularity in two alternating phases:</p>
+      <p><strong>Phase 1</strong>: Start with each node in its own community. For each node, try moving it to each neighbor's community and compute the modularity gain ΔQ. Accept the move with the largest positive ΔQ. Repeat passes until no node moves.</p>
+      <p><strong>Phase 2</strong>: Collapse each community into a super-node, creating a smaller weighted graph. Self-loops represent internal edges. Then run Phase 1 again on the smaller graph.</p>
+      <p>Repeat until no improvement is possible. It's greedy and fast — O(n log n) in practice — which is why it scales to networks with millions of nodes.</p>`;
+  }
+
+  // ── Why 4 communities ──
+  if (ql.includes('why 4') || ql.includes('why four') || (ql.includes('why') && ql.includes('communities'))) {
+    return `<p>The algorithm finds <strong>4 communities</strong> because that's what maximizes modularity for this graph structure.</p>
+      <p>Each cluster has <strong>5 internal edges</strong> among 4 nodes, but only <strong>1 bridge edge</strong> to an adjacent cluster. Merging two clusters would add just 1 edge to L_c but would dramatically increase d_c (the degree penalty term), resulting in a net <strong>decrease</strong> in Q.</p>
+      <p>For example, merging A and B: L_c goes from 5+5=10 to 11 (+1 bridge), but d_c goes from ~12 to ~24, and (24/46)² ≈ 0.272 vs 2×(12/46)² ≈ 0.136. The penalty doubles but the reward barely increases.</p>`;
+  }
+
+  // ── Complexity / performance ──
+  if (ql.includes('complex') || ql.includes('fast') || ql.includes('performance') || ql.includes('big o') || ql.includes('scale')) {
+    return `<p>Louvain runs in <strong>O(n log n)</strong> time in practice, making it one of the fastest community detection algorithms.</p>
+      <p>Phase 1 is O(m) per pass (check each edge), and typically converges in a few passes. Phase 2 shrinks the graph dramatically. The hierarchical coarsening means even networks with <strong>millions of nodes</strong> can be processed in seconds.</p>`;
+  }
+
+  // ── Fallback ──
+  return `<p>I can answer questions about:</p>
+    <p>• <strong>Specific nodes</strong>: "Tell me about node 5", "Why did node 3 join that community?"<br>
+    • <strong>The formula</strong>: "Explain the modularity formula", "What is ΔQ?"<br>
+    • <strong>Algorithm phases</strong>: "How does Phase 1 work?", "What is aggregation?"<br>
+    • <strong>Current step</strong>: "Explain this step", "What's happening?"<br>
+    • <strong>Comparisons</strong>: "Compare node 1 and node 4", "What if node 0 moved?"<br>
+    • <strong>General</strong>: "Why 4 communities?", "What are bridge edges?"</p>
+    <p>Try asking about something specific!</p>`;
+}
+
+// ── Suggestion chips ─────────────────────────────────────────
+function updateSuggestions() {
+  const s = steps[currentStep];
+  const suggestions = [];
+
+  if (s.highlightNode >= 0) {
+    suggestions.push(`Why did node ${s.highlightNode} move?`);
+    suggestions.push(`What if node ${s.highlightNode} went elsewhere?`);
+  }
+  if (s.badge === 'intro') {
+    suggestions.push('How does Louvain work?');
+    suggestions.push('Explain the modularity formula');
+  }
+  if (s.badge === 'phase1') {
+    suggestions.push('Explain this step');
+    suggestions.push('What is ΔQ?');
+  }
+  if (s.badge === 'phase2') {
+    suggestions.push('What is aggregation?');
+    suggestions.push('Why does it converge?');
+  }
+  if (s.badge === 'result') {
+    suggestions.push('Why 4 communities?');
+    suggestions.push('What are bridge edges?');
+  }
+  suggestions.push('How many communities now?');
+
+  const container = document.getElementById('chatSuggestions');
+  container.innerHTML = suggestions.map(s =>
+    `<button onclick="askSuggestion(this.textContent)">${s}</button>`
+  ).join('');
+}
+
+function askSuggestion(text) {
+  document.getElementById('chatInput').value = text;
+  sendChat();
+}
+
+function sendChat() {
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
   if (!text) return;
-
-  if (!apiKey) {
-    document.getElementById('apiKeyBar').style.display = '';
-    document.getElementById('apiKeyStatus').textContent = 'Please add your API key first';
-    document.getElementById('apiKeyStatus').className = 'status err';
-    document.getElementById('apiKeyInput').focus();
-    return;
-  }
-
   input.value = '';
   addChatMsg('user', text);
-
-  chatHistory.push({ role: 'user', content: text });
-
-  // Show typing indicator
-  const typingDiv = addChatMsg('assistant', '');
-  typingDiv.innerHTML = '<span class="typing"></span> <span class="typing" style="animation-delay:.2s"></span> <span class="typing" style="animation-delay:.4s"></span>';
-
-  document.getElementById('chatSend').disabled = true;
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        system: buildSystemPrompt(),
-        messages: chatHistory.slice(-10) // keep last 10 for context window
-      })
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `API error ${resp.status}`);
-    }
-
-    const data = await resp.json();
-    const reply = data.content?.[0]?.text || 'No response.';
-
-    typingDiv.remove();
-    addChatMsg('assistant', reply);
-    chatHistory.push({ role: 'assistant', content: reply });
-
-  } catch (e) {
-    typingDiv.remove();
-    const errDiv = addChatMsg('error', e.message);
-    errDiv.className = 'chat-msg error';
-    // Remove failed exchange from history
-    chatHistory.pop();
-
-    if (e.message.includes('401') || e.message.includes('auth') || e.message.includes('key')) {
-      document.getElementById('apiKeyBar').style.display = '';
-      apiKey = '';
-      localStorage.removeItem('louvain_api_key');
-    }
-  } finally {
-    document.getElementById('chatSend').disabled = false;
-    document.getElementById('chatInput').focus();
-  }
+  const answer = answerQuestion(text);
+  addChatMsg('assistant', answer);
+  updateSuggestions();
 }
 
 // Resize handle for chat panel
@@ -902,6 +1064,10 @@ function onResize(e) {
 document.addEventListener('keydown', e => {
   if (document.activeElement.tagName === 'INPUT') e.stopImmediatePropagation();
 }, true);
+
+// Update suggestions when step changes
+const origGoStep = goStep;
+goStep = function(idx) { origGoStep(idx); if (chatOpen) updateSuggestions(); };
 </script>
 </body>
 </html>

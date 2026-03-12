@@ -140,19 +140,15 @@ svg{width:100%;height:100%;display:block}
 <script>
 // ── GRAPH DEFINITION ─────────────────────────────────────────
 const EDGES = [
-  // Community A (0-3)
-  [0,1],[0,2],[0,3],[1,2],[2,3],
-  // Community B (4-7)
-  [4,5],[4,6],[4,7],[5,6],[6,7],
-  // Community C (8-11)
-  [8,9],[8,10],[8,11],[9,10],[10,11],
-  // Community D (12-15)
-  [12,13],[12,14],[12,15],[13,14],[14,15],
-  // Bridges
-  [1,4],[7,8],[11,12]
+  // Clique A: K4 on {0,1,2,3}
+  [0,1],[0,2],[0,3],[1,2],[1,3],[2,3],
+  // Clique B: K4 on {5,6,7,8}
+  [5,6],[5,7],[5,8],[6,7],[6,8],[7,8],
+  // Bridge through node 4
+  [3,4],[4,5]
 ];
-const N = 16;
-const m = EDGES.length; // 23
+const N = 9;
+const m = EDGES.length; // 14
 
 const COLORS = [
   '#e74c3c','#3498db','#2ecc71','#f39c12',
@@ -247,11 +243,11 @@ function buildSteps() {
   // Step 0: Introduction
   addStep('intro', 'What is the Louvain Algorithm?', 'intro', assign, `
     <p>The <b>Louvain algorithm</b> is a greedy method for <b>community detection</b> in large networks. It optimizes <b>modularity</b> — a measure of how well a network is partitioned into densely connected groups.</p>
-    <p>Our toy network has <b>16 nodes</b> and <b>${m} edges</b>, arranged into 4 natural clusters connected by bridge edges (dashed lines).</p>
+    <p>Our network has <b>${N} nodes</b> and <b>${m} edges</b>: two cliques of 4 nodes (K<sub>4</sub>) joined by a bridge node (dashed lines).</p>
     <p>The algorithm works in two alternating phases:</p>
     <p><b>Phase 1</b> — Local moves: try moving each node to a neighbor's community if it increases modularity.</p>
     <p><b>Phase 2</b> — Aggregation: collapse each community into a single super-node and repeat.</p>
-    <p>Initially, every node is its own community (16 communities). Let's begin!</p>
+    <p>Initially, every node is its own community (${N} communities). Let's begin!</p>
   `);
 
   // Step 1: The formula
@@ -278,7 +274,7 @@ function buildSteps() {
   // Step 2: Show initial modularity
   const Q0 = modularity(getCommunities(assign));
   addStep('intro', 'Initial State', 'intro', assign, `
-    <p>Each of the 16 nodes starts in its own community. The initial modularity is:</p>
+    <p>Each of the ${N} nodes starts in its own community. The initial modularity is:</p>
     <div class="formula-box">
       Q = Σ [ 0/${m} − (k<sub>i</sub>/${2*m})² ] = <span class="result">${Q0.toFixed(4)}</span>
     </div>
@@ -459,7 +455,7 @@ function buildSteps() {
       }).join('<br>')}
     </div>
     <p>Modularity is preserved: Q = <span style="color:#4ade80;font-weight:700">${Qphase1.toFixed(4)}</span>.</p>
-    <p>We would now run Phase 1 again on this super-graph. Since each super-node's best move is to stay (only 1 bridge edge between each pair), <b>the algorithm converges</b>.</p>
+    <p>We would now run Phase 1 again on this super-graph. The bridge edges between super-nodes are too weak relative to internal self-loops, so no super-node benefits from merging — <b>the algorithm converges</b>.</p>
   `, { superGraph: { nodes: commList, edges: superEdges, weights: superWeights, selfLoops } });
 
   // ── FINAL RESULT ───────────────────────────────────────────
@@ -483,7 +479,7 @@ function buildSteps() {
       <span class="sep"></span>
       <span class="result">Q = ${Qphase1.toFixed(4)}</span>
     </div>
-    <p>The algorithm successfully recovered the 4 planted communities from the network structure.</p>
+    <p>The algorithm successfully recovered the natural communities from the network structure.</p>
     <p>Use the timeline below to revisit any step.</p>
   `);
 }
@@ -501,21 +497,26 @@ const W = 700, H = 500;
 let _seed = 42;
 function seededRandom() { _seed = (_seed * 16807 + 0) % 2147483647; return _seed / 2147483647; }
 
-const clusterCenters = [
-  {x: W*0.25, y: H*0.3},
-  {x: W*0.75, y: H*0.3},
-  {x: W*0.75, y: H*0.7},
-  {x: W*0.25, y: H*0.7},
+// Clique A left, bridge center, clique B right
+const fixedPositions = [
+  // Clique A {0,1,2,3}
+  {x: W*0.18, y: H*0.30},
+  {x: W*0.10, y: H*0.55},
+  {x: W*0.28, y: H*0.55},
+  {x: W*0.30, y: H*0.35},
+  // Bridge node 4
+  {x: W*0.50, y: H*0.50},
+  // Clique B {5,6,7,8}
+  {x: W*0.70, y: H*0.35},
+  {x: W*0.72, y: H*0.55},
+  {x: W*0.82, y: H*0.30},
+  {x: W*0.90, y: H*0.55},
 ];
 
 for (let i = 0; i < N; i++) {
-  const cluster = Math.floor(i / 4);
-  const inCluster = i % 4;
-  const angle = (inCluster / 4) * Math.PI * 2 + seededRandom() * 0.3;
-  const r = 40 + seededRandom() * 20;
   nodePositions.push({
-    x: clusterCenters[cluster].x + Math.cos(angle) * r,
-    y: clusterCenters[cluster].y + Math.sin(angle) * r,
+    x: fixedPositions[i].x + (seededRandom() - 0.5) * 10,
+    y: fixedPositions[i].y + (seededRandom() - 0.5) * 10,
     vx: 0, vy: 0
   });
 }
@@ -572,7 +573,7 @@ function simulate(iterations) {
 simulate(300);
 
 // Bridge edges set
-const bridgeSet = new Set(['1-4', '4-1', '7-8', '8-7', '11-12', '12-11']);
+const bridgeSet = new Set(['3-4', '4-3', '4-5', '5-4']);
 function isBridge(a, b) {
   return bridgeSet.has(a + '-' + b);
 }
@@ -851,7 +852,7 @@ function answerQuestion(q) {
       Current community: {${comm.join(', ')}}<br>
       Internal edges in community: ${commInternal}<br>
       Community total degree (d_c): ${commDeg}<br>
-      Bridge node: <strong>${nbrs.some(n => Math.floor(n/4) !== Math.floor(nd/4)) ? 'Yes' : 'No'}</strong> (has cross-cluster edges)</p>`;
+      Bridge node: <strong>${nd === 4 ? 'Yes — connects both cliques' : (nbrs.includes(4) ? 'Adjacent to bridge' : 'No')}</strong></p>`;
   }
 
   // ── Modularity formula ──
@@ -890,7 +891,7 @@ function answerQuestion(q) {
       <p>1. Computes ΔQ for moving to each <strong>neighbor's</strong> community<br>
       2. Picks the move with the <strong>largest positive ΔQ</strong><br>
       3. If ΔQ > 0, makes the move; otherwise the node stays</p>
-      <p>This repeats in passes over all nodes until <strong>no node wants to move</strong> (convergence). In our graph, Phase 1 discovers the 4 natural communities since internal edges (5 per cluster) far outweigh bridge edges (1 each).</p>`;
+      <p>This repeats in passes over all nodes until <strong>no node wants to move</strong> (convergence). In our graph, each K<sub>4</sub> clique has 6 internal edges vs only 1 bridge edge, so nodes strongly prefer their own clique.</p>`;
   }
 
   // ── Phase 2 ──
@@ -904,18 +905,17 @@ function answerQuestion(q) {
 
   // ── Bridge edges ──
   if (ql.includes('bridge') || ql.includes('dashed') || ql.includes('inter') && ql.includes('edge')) {
-    return `<p><strong>Bridge edges</strong> (shown dashed) connect different natural clusters:</p>
-      <p>• <strong>1 — 4</strong>: connects cluster A {0,1,2,3} to cluster B {4,5,6,7}<br>
-      • <strong>7 — 8</strong>: connects cluster B to cluster C {8,9,10,11}<br>
-      • <strong>11 — 12</strong>: connects cluster C to cluster D {12,13,14,15}</p>
-      <p>Each cluster has 5 internal edges but only 1 bridge edge, so the modularity gain from grouping nodes with their cluster is much higher than pulling a node across a bridge. That's why the algorithm correctly separates them.</p>`;
+    return `<p><strong>Bridge edges</strong> (shown dashed) pass through the bridge node 4:</p>
+      <p>• <strong>3 — 4</strong>: connects clique A {0,1,2,3} to bridge node 4<br>
+      • <strong>4 — 5</strong>: connects bridge node 4 to clique B {5,6,7,8}</p>
+      <p>Each clique has 6 internal edges (K<sub>4</sub>) but only 1 bridge edge, so the modularity gain from grouping nodes within their clique is much higher than pulling a node across the bridge. Node 4 (degree 2) joins whichever side offers better ΔQ.</p>`;
   }
 
   // ── Convergence ──
   if (ql.includes('converg') || ql.includes('stop') || ql.includes('terminat') || ql.includes('when does it end')) {
     return `<p><strong>Convergence</strong> happens when no single node can improve modularity by switching communities.</p>
       <p>Phase 1 converges when a full pass over all ${N} nodes produces <strong>zero moves</strong>. Then Phase 2 aggregates, and the cycle repeats until the super-graph Phase 1 also produces no moves.</p>
-      <p>In our graph, Phase 1 finds 4 communities. The resulting 4-node super-graph has only 1 edge between each adjacent pair, so no super-node benefits from merging → full convergence. Final Q = <strong>${steps[steps.length-1].Q.toFixed(4)}</strong>.</p>`;
+      <p>In our graph, Phase 1 groups the two K<sub>4</sub> cliques (with node 4 joining one side). The resulting super-graph is small enough that no further merges improve Q → full convergence. Final Q = <strong>${steps[steps.length-1].Q.toFixed(4)}</strong>.</p>`;
   }
 
   // ── Current step ──
@@ -971,10 +971,11 @@ function answerQuestion(q) {
   }
 
   // ── Why 4 communities ──
-  if (ql.includes('why 4') || ql.includes('why four') || (ql.includes('why') && ql.includes('communities'))) {
-    return `<p>The algorithm finds <strong>4 communities</strong> because that's what maximizes modularity for this graph structure.</p>
-      <p>Each cluster has <strong>5 internal edges</strong> among 4 nodes, but only <strong>1 bridge edge</strong> to an adjacent cluster. Merging two clusters would add just 1 edge to L_c but would dramatically increase d_c (the degree penalty term), resulting in a net <strong>decrease</strong> in Q.</p>
-      <p>For example, merging A and B: L_c goes from 5+5=10 to 11 (+1 bridge), but d_c goes from ~12 to ~24, and (24/46)² ≈ 0.272 vs 2×(12/46)² ≈ 0.136. The penalty doubles but the reward barely increases.</p>`;
+  if (ql.includes('why') && ql.includes('communit')) {
+    const comms = s.communities;
+    return `<p>The algorithm finds <strong>${comms.length} communities</strong> because that maximizes modularity for this graph structure.</p>
+      <p>Each K<sub>4</sub> clique has <strong>6 internal edges</strong> among 4 nodes, but only <strong>1 bridge edge</strong>. Merging the two cliques would add just 1–2 edges to L_c but dramatically increase d_c (the degree penalty), resulting in a net <strong>decrease</strong> in Q.</p>
+      <p>Node 4 (the bridge, degree 2) joins whichever clique offers the best ΔQ — it has 1 edge to each side, so the tie-breaking depends on processing order and current community sizes.</p>`;
   }
 
   // ── Complexity / performance ──

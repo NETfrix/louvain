@@ -240,17 +240,16 @@ function addStep(type, title, badge, assignment, html, extras = {}) {
 function buildSteps() {
   let assign = Array.from({length: N}, (_, i) => i);
 
-  // Step 0: Introduction
+  // ── INTRO STEPS ──────────────────────────────────────────────
   addStep('intro', 'What is the Louvain Algorithm?', 'intro', assign, `
     <p>The <b>Louvain algorithm</b> is a greedy method for <b>community detection</b> in large networks. It optimizes <b>modularity</b> — a measure of how well a network is partitioned into densely connected groups.</p>
-    <p>Our network has <b>${N} nodes</b> and <b>${m} edges</b>: two cliques of 4 nodes (K<sub>4</sub>) joined by a bridge node (dashed lines).</p>
+    <p>Our network has <b>${N} nodes</b> and <b>${m} edges</b>: two cliques of 4 nodes (K<sub>4</sub>) joined by a bridge node 4 (dashed lines).</p>
     <p>The algorithm works in two alternating phases:</p>
     <p><b>Phase 1</b> — Local moves: try moving each node to a neighbor's community if it increases modularity.</p>
     <p><b>Phase 2</b> — Aggregation: collapse each community into a single super-node and repeat.</p>
     <p>Initially, every node is its own community (${N} communities). Let's begin!</p>
   `);
 
-  // Step 1: The formula
   addStep('intro', 'The Modularity Formula', 'intro', assign, `
     <p>Modularity <b>Q</b> measures partition quality:</p>
     <div class="formula-box">
@@ -271,7 +270,6 @@ function buildSteps() {
     <p>We move node <b>i</b> to the community giving the <b>largest positive ΔQ</b>.</p>
   `);
 
-  // Step 2: Show initial modularity
   const Q0 = modularity(getCommunities(assign));
   addStep('intro', 'Initial State', 'intro', assign, `
     <p>Each of the ${N} nodes starts in its own community. The initial modularity is:</p>
@@ -282,139 +280,132 @@ function buildSteps() {
     <p>Now Phase 1 begins. We scan each node and try moving it to its best neighbor's community.</p>
   `);
 
-  // ── PHASE 1 ────────────────────────────────────────────────
-  // Run Louvain Phase 1, recording key steps
-  let moveCount = 0;
+  // ── PHASE 1 — all passes, all moves shown ────────────────────
   let improved = true;
   let passNum = 0;
 
   while (improved) {
     improved = false;
     passNum++;
-    const showThisPass = passNum <= 2; // show detail for first 2 passes
 
     for (let node = 0; node < N; node++) {
       const currentComm = assign[node];
       // Find neighbor communities
       const neighborComms = new Set();
-      const neighborMap = {};
       for (const [a, b] of EDGES) {
         const nbr = a === node ? b : (b === node ? a : -1);
-        if (nbr >= 0) {
-          neighborComms.add(assign[nbr]);
-          if (!neighborMap[assign[nbr]]) neighborMap[assign[nbr]] = [];
-          neighborMap[assign[nbr]].push(nbr);
-        }
+        if (nbr >= 0) neighborComms.add(assign[nbr]);
       }
 
       let bestComm = currentComm;
       let bestDQ = 0;
-      const dqResults = {};
 
-      // ΔQ for removing from current community (always compute)
+      // ΔQ for removing from current community
       const dqRemove = -deltaQ(node, currentComm, assign);
 
+      // Evaluate every neighbor community, collect ALL options for display
+      const options = [];
       for (const comm of neighborComms) {
         if (comm === currentComm) continue;
         const dq = deltaQ(node, comm, assign) + dqRemove;
-        dqResults[comm] = dq;
+
+        // Gather details for this option
+        const targetNodes = new Set();
+        for (let i = 0; i < assign.length; i++) {
+          if (assign[i] === comm && i !== node) targetNodes.add(i);
+        }
+        let opt_k_in = 0;
+        const opt_hEdges = [];
+        for (const [a, b] of EDGES) {
+          if (a === node && targetNodes.has(b)) { opt_k_in++; opt_hEdges.push([a,b]); }
+          if (b === node && targetNodes.has(a)) { opt_k_in++; opt_hEdges.push([a,b]); }
+        }
+        let opt_sigma = 0;
+        for (const n of targetNodes) opt_sigma += degree(n);
+
+        options.push({
+          comm, dq, k_in: opt_k_in, sigma_tot: opt_sigma,
+          members: [...targetNodes].sort((a,b)=>a-b),
+          hEdges: opt_hEdges
+        });
+
         if (dq > bestDQ) { bestDQ = dq; bestComm = comm; }
       }
 
       if (bestComm !== currentComm && bestDQ > 1e-10) {
-        // Show this move
-        moveCount++;
         const k_i = degree(node);
-        // Compute displayed values for best community
-        const comNodes = new Set();
-        for (let i = 0; i < assign.length; i++) {
-          if (assign[i] === bestComm && i !== node) comNodes.add(i);
-        }
-        let k_in = 0;
-        const hEdges = [];
-        for (const [a, b] of EDGES) {
-          if (a === node && comNodes.has(b)) { k_in++; hEdges.push([a,b]); }
-          if (b === node && comNodes.has(a)) { k_in++; hEdges.push([a,b]); }
-        }
-        let sigma_tot = 0;
-        for (const n of comNodes) sigma_tot += degree(n);
+        const bestOpt = options.find(o => o.comm === bestComm);
 
-        const showDetail = showThisPass && moveCount <= 10;
+        // Current community members
+        const currentMembers = [];
+        for (let j = 0; j < N; j++) if (assign[j] === currentComm) currentMembers.push(j);
+        const currentDesc = '{' + currentMembers.sort((a,b)=>a-b).join(', ') + '}';
 
-        if (showDetail) {
-          const commMembers = [...comNodes].sort((a,b)=>a-b);
-          // Build neighbor community descriptions
-          const nbrCommDescs = [...neighborComms].map(c => {
-            const members = [];
-            for (let j = 0; j < N; j++) if (assign[j] === c) members.push(j);
-            return '{' + members.sort((a,b)=>a-b).join(',') + '}';
-          });
-          const currentMembers = [];
-          for (let j = 0; j < N; j++) if (assign[j] === currentComm) currentMembers.push(j);
-          const currentDesc = '{' + currentMembers.sort((a,b)=>a-b).join(',') + '}';
-          addStep('phase1', `Move node ${node} → community {${commMembers.join(',')}}`, 'phase1', assign, `
-            <p><b>Phase 1, Pass ${passNum}</b> — Evaluating node <b>${node}</b> (degree k<sub>${node}</sub> = ${k_i}).</p>
-            <p>Node ${node} is currently in community ${currentDesc}. Its neighbors belong to: ${nbrCommDescs.join(', ')}.</p>
-            <p>Best option: move to community <b>{${commMembers.join(',')}}</b>:</p>
-            <div class="formula-box">
-              <span class="label">k<sub>${node},in</sub></span> = ${k_in} (edge${k_in!==1?'s':''} to {${commMembers.join(',')}})<br>
-              <span class="label">Σ<sub>tot</sub></span> = ${sigma_tot} (sum of degrees in target)<br>
-              <span class="label">k<sub>${node}</sub></span> = ${k_i}<br>
-              <span class="label">m</span> = ${m}
-              <span class="sep"></span>
-              <span class="label">ΔQ</span> = ${k_in}/${m} − (${sigma_tot} × ${k_i}) / (2 × ${m}²)<br>
-              &nbsp;&nbsp;&nbsp;&nbsp;= ${(k_in/m).toFixed(4)} − ${(sigma_tot*k_i/(2*m*m)).toFixed(4)}<br>
-              &nbsp;&nbsp;&nbsp;&nbsp;= <span class="result">${bestDQ.toFixed(4)}</span> &gt; 0 ✓ Move!
-            </div>
-          `, { highlightNode: node, highlightEdges: hEdges, highlightComm: bestComm });
+        // Build comparison of ALL options
+        let optionsHtml = '';
+        for (const opt of options.sort((a,b) => b.dq - a.dq)) {
+          const isBest = opt.comm === bestComm;
+          const marker = isBest ? ' ← <span class="result">best!</span>' : (opt.dq > 0 ? '' : ' ✗');
+          optionsHtml += `
+            <span class="label">→ {${opt.members.join(', ')}}</span>:<br>
+            &nbsp;&nbsp;k<sub>in</sub> = <span class="highlight">${opt.k_in}</span>,
+            Σ<sub>tot</sub> = <span class="highlight">${opt.sigma_tot}</span>,
+            k<sub>i</sub> = <span class="highlight">${k_i}</span><br>
+            &nbsp;&nbsp;ΔQ = ${opt.k_in}/${m} − (${opt.sigma_tot} × ${k_i}) / (2 × ${m}²)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= ${(opt.k_in/m).toFixed(4)} − ${(opt.sigma_tot*k_i/(2*m*m)).toFixed(4)}
+            = <span class="${isBest ? 'result' : ''}">${opt.dq.toFixed(4)}</span>${marker}<br>`;
         }
+
+        addStep('phase1', `Move node ${node} → {${bestOpt.members.join(',')}}`, 'phase1', assign, `
+          <p><b>Pass ${passNum}</b> — Node <b>${node}</b> (degree ${k_i}), currently in ${currentDesc}.</p>
+          <p>Evaluating all neighbor communities:</p>
+          <div class="formula-box">
+            ${optionsHtml}
+          </div>
+          <p>Node ${node} moves to <b>{${bestOpt.members.join(', ')}}</b> (ΔQ = ${bestDQ.toFixed(4)} > 0).</p>
+        `, { highlightNode: node, highlightEdges: bestOpt.hEdges, highlightComm: bestComm });
 
         assign[node] = bestComm;
         improved = true;
 
-        if (showDetail) {
-          const commsNow = getCommunities(assign);
-          const Qnow = modularity(commsNow);
-          addStep('phase1', `After moving node ${node}`, 'phase1', assign, `
-            <p>Node <b>${node}</b> has been moved. The network now has <b>${commsNow.length} communities</b>.</p>
-            <div class="formula-box">
-              Q = <span class="result">${Qnow.toFixed(4)}</span> (was ${(Qnow - bestDQ).toFixed(4)}, gained ${bestDQ.toFixed(4)})
-            </div>
-            <p>Current communities:</p>
-            <ul class="community-list">${commsNow.map((c, i) => {
-              const members = [...c].sort((a,b)=>a-b);
-              return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
-            }).join('')}</ul>
-          `);
-        }
+        // Show state after move
+        const commsNow = getCommunities(assign);
+        const Qnow = modularity(commsNow);
+        addStep('phase1', `After moving node ${node}`, 'phase1', assign, `
+          <p>Node <b>${node}</b> moved. Now <b>${commsNow.length} communities</b>:</p>
+          <div class="formula-box">
+            Q = <span class="result">${Qnow.toFixed(4)}</span>
+            (was ${(Qnow - bestDQ).toFixed(4)}, gained ${bestDQ.toFixed(4)})
+          </div>
+          <ul class="community-list">${commsNow.map((c) => {
+            const members = [...c].sort((a,b)=>a-b);
+            return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
+          }).join('')}</ul>
+        `);
       }
     }
 
-    // After each pass, show summary
+    // Pass summary
     const commsAfterPass = getCommunities(assign);
     const QafterPass = modularity(commsAfterPass);
-    if (passNum <= 3) {
-      addStep('phase1', `Phase 1, Pass ${passNum} Complete`, 'phase1', assign, `
-        <p>Pass ${passNum} of Phase 1 is complete. ${improved ? 'Some nodes moved — we\'ll do another pass.' : 'No nodes moved — Phase 1 converges!'}</p>
-        <div class="formula-box">
-          Q = <span class="result">${QafterPass.toFixed(4)}</span><br>
-          Communities: <span class="highlight">${commsAfterPass.length}</span>
-        </div>
-        <p>Communities found:</p>
-        <ul class="community-list">${commsAfterPass.map((c) => {
-          const members = [...c].sort((a,b)=>a-b);
-          return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
-        }).join('')}</ul>
-        ${!improved ? '<p>Phase 1 has <b>converged</b>. No node can improve modularity by switching. Now we move to <b>Phase 2</b>.</p>' : ''}
-      `);
-    }
+    addStep('phase1', `Pass ${passNum} Complete`, 'phase1', assign, `
+      <p>Pass ${passNum} is complete. ${improved ? 'Some nodes moved — we\'ll scan again.' : 'No nodes moved — <b>Phase 1 converges!</b>'}</p>
+      <div class="formula-box">
+        Q = <span class="result">${QafterPass.toFixed(4)}</span><br>
+        Communities: <span class="highlight">${commsAfterPass.length}</span>
+      </div>
+      <ul class="community-list">${commsAfterPass.map((c) => {
+        const members = [...c].sort((a,b)=>a-b);
+        return `<li><span class="dot" style="background:${COLORS[assign[members[0]] % COLORS.length]}"></span>{${members.join(', ')}}</li>`;
+      }).join('')}</ul>
+      ${!improved ? '<p>No node can improve Q by switching. Now we move to <b>Phase 2: Aggregation</b>.</p>' : ''}
+    `);
   }
 
-  // ── PHASE 2 ────────────────────────────────────────────────
+  // ── PHASE 2: AGGREGATION ─────────────────────────────────────
   const phase1Comms = getCommunities(assign);
   const Qphase1 = modularity(phase1Comms);
 
-  // Build super-graph
   const commIds = {};
   const commList = [];
   phase1Comms.forEach((c, i) => {
@@ -440,7 +431,7 @@ function buildSteps() {
   }
 
   addStep('phase2', 'Phase 2: Build Super-Graph', 'phase2', assign, `
-    <p>In Phase 2, each community from Phase 1 becomes a <b>super-node</b>. Edges between communities become weighted edges between super-nodes. Internal edges become self-loops.</p>
+    <p>Each community becomes a <b>super-node</b>. Internal edges → self-loops. Cross-community edges → weighted super-edges.</p>
     <div class="formula-box">
       <span class="label">Super-nodes:</span> ${commList.length}<br>
       ${commList.map((c, i) => {
@@ -455,7 +446,7 @@ function buildSteps() {
       }).join('<br>')}
     </div>
     <p>Modularity is preserved: Q = <span style="color:#4ade80;font-weight:700">${Qphase1.toFixed(4)}</span>.</p>
-    <p>We would now run Phase 1 again on this super-graph. The bridge edges between super-nodes are too weak relative to internal self-loops, so no super-node benefits from merging — <b>the algorithm converges</b>.</p>
+    <p>We now run Phase 1 again on this super-graph. The bridge edges are too weak relative to internal self-loops, so no super-node benefits from merging — <b>the algorithm converges</b>.</p>
   `, { superGraph: { nodes: commList, edges: superEdges, weights: superWeights, selfLoops } });
 
   // ── FINAL RESULT ───────────────────────────────────────────
@@ -480,7 +471,7 @@ function buildSteps() {
       <span class="result">Q = ${Qphase1.toFixed(4)}</span>
     </div>
     <p>The algorithm successfully recovered the natural communities from the network structure.</p>
-    <p>Use the timeline below to revisit any step.</p>
+    <p>Use the timeline below to revisit any step, or <b>Ask AI</b> to explore further.</p>
   `);
 }
 

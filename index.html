@@ -253,7 +253,7 @@ function buildSteps() {
   addStep('intro', 'The Modularity Formula', 'intro', assign, `
     <p>Modularity <b>Q</b> measures partition quality:</p>
     <div class="formula-box">
-      <span class="label">Q</span> = Σ<sub>c</sub> [ <span class="highlight">L<sub>c</sub>/m</span> − (<span class="highlight">d<sub>c</sub>/2m</span>)² ]
+      <span class="label">Q</span> = &sum;<sub>c</sub> [ <span class="highlight">L<sub>c</sub> &frasl; m</span> &minus; (<span class="highlight">d<sub>c</sub> &frasl; 2m</span>)&sup2; ]
       <span class="sep"></span>
       <span class="label">L<sub>c</sub></span> = edges inside community c<br>
       <span class="label">d<sub>c</sub></span> = sum of degrees in community c<br>
@@ -261,22 +261,22 @@ function buildSteps() {
     </div>
     <p>To decide if node <b>i</b> should move to community <b>C</b>, we compute the <b>modularity gain</b>:</p>
     <div class="formula-box">
-      <span class="label">ΔQ</span> = <span class="highlight">k<sub>i,in</sub></span>/m − (<span class="highlight">Σ<sub>tot</sub></span> · <span class="highlight">k<sub>i</sub></span>) / 2m²
+      <span class="label">&Delta;Q</span> = <span class="highlight">k<sub>i,in</sub></span> &frasl; m &minus; (<span class="highlight">&Sigma;<sub>tot</sub></span> &middot; <span class="highlight">k<sub>i</sub></span>) &frasl; 2m&sup2;
       <span class="sep"></span>
-      <span class="label">k<sub>i,in</sub></span> = edges from i to community C<br>
-      <span class="label">Σ<sub>tot</sub></span> = sum of degrees in C (excl. i)<br>
+      <span class="label">k<sub>i,in</sub></span> = edges from node i to community C<br>
+      <span class="label">&Sigma;<sub>tot</sub></span> = sum of degrees in C (excl. i)<br>
       <span class="label">k<sub>i</sub></span> = degree of node i
     </div>
-    <p>We move node <b>i</b> to the community giving the <b>largest positive ΔQ</b>.</p>
+    <p>We move node <b>i</b> to the community giving the <b>largest positive &Delta;Q</b>.</p>
   `);
 
   const Q0 = modularity(getCommunities(assign));
   addStep('intro', 'Initial State', 'intro', assign, `
     <p>Each of the ${N} nodes starts in its own community. The initial modularity is:</p>
     <div class="formula-box">
-      Q = Σ [ 0/${m} − (k<sub>i</sub>/${2*m})² ] = <span class="result">${Q0.toFixed(4)}</span>
+      Q = &sum; [ 0 &frasl; ${m} &minus; (k<sub>i</sub> &frasl; ${2*m})&sup2; ] = <span class="result">${Q0.toFixed(4)}</span>
     </div>
-    <p>Since no community has internal edges (L<sub>c</sub>=0 for all), Q is negative — we can only go up from here.</p>
+    <p>Since no community has internal edges (L<sub>c</sub> = 0 for all), Q is negative — we can only go up from here.</p>
     <p>Now Phase 1 begins. We scan each node and try moving it to its best neighbor's community.</p>
   `);
 
@@ -341,28 +341,32 @@ function buildSteps() {
         for (let j = 0; j < N; j++) if (assign[j] === currentComm) currentMembers.push(j);
         const currentDesc = '{' + currentMembers.sort((a,b)=>a-b).join(', ') + '}';
 
-        // Build comparison of ALL options
+        // Build comparison of ALL options with full numeric substitution
         let optionsHtml = '';
         for (const opt of options.sort((a,b) => b.dq - a.dq)) {
           const isBest = opt.comm === bestComm;
-          const marker = isBest ? ' ← <span class="result">best!</span>' : (opt.dq > 0 ? '' : ' ✗');
+          const marker = isBest ? ' &larr; <span class="result">best!</span>' : (opt.dq > 0 ? '' : ' &#10007;');
+          const twoMSq = 2 * m * m;
+          const numerator = opt.sigma_tot * k_i;
           optionsHtml += `
-            <span class="label">→ {${opt.members.join(', ')}}</span>:<br>
-            &nbsp;&nbsp;k<sub>in</sub> = <span class="highlight">${opt.k_in}</span>,
-            Σ<sub>tot</sub> = <span class="highlight">${opt.sigma_tot}</span>,
+            <span class="label">&rarr; {${opt.members.join(', ')}}</span>:<br>
+            &nbsp;&nbsp;k<sub>i,in</sub> = <span class="highlight">${opt.k_in}</span> &nbsp;
+            &Sigma;<sub>tot</sub> = <span class="highlight">${opt.sigma_tot}</span> &nbsp;
             k<sub>i</sub> = <span class="highlight">${k_i}</span><br>
-            &nbsp;&nbsp;ΔQ = ${opt.k_in}/${m} − (${opt.sigma_tot} × ${k_i}) / (2 × ${m}²)<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= ${(opt.k_in/m).toFixed(4)} − ${(opt.sigma_tot*k_i/(2*m*m)).toFixed(4)}
+            &nbsp;&nbsp;&Delta;Q = k<sub>i,in</sub> &frasl; m &minus; (&Sigma;<sub>tot</sub> &middot; k<sub>i</sub>) &frasl; 2m&sup2;<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= ${opt.k_in} &frasl; ${m} &minus; (${opt.sigma_tot} &times; ${k_i}) &frasl; (2 &times; ${m}&sup2;)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= ${(opt.k_in/m).toFixed(4)} &minus; ${numerator} &frasl; ${twoMSq}<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= ${(opt.k_in/m).toFixed(4)} &minus; ${(numerator/twoMSq).toFixed(4)}
             = <span class="${isBest ? 'result' : ''}">${opt.dq.toFixed(4)}</span>${marker}<br>`;
         }
 
-        addStep('phase1', `Move node ${node} → {${bestOpt.members.join(',')}}`, 'phase1', assign, `
-          <p><b>Pass ${passNum}</b> — Node <b>${node}</b> (degree ${k_i}), currently in ${currentDesc}.</p>
+        addStep('phase1', `Move node ${node} \u2192 {${bestOpt.members.join(',')}}`, 'phase1', assign, `
+          <p><b>Pass ${passNum}</b> — Node <b>${node}</b> (k<sub>${node}</sub> = ${k_i}), currently in ${currentDesc}.</p>
           <p>Evaluating all neighbor communities:</p>
           <div class="formula-box">
             ${optionsHtml}
           </div>
-          <p>Node ${node} moves to <b>{${bestOpt.members.join(', ')}}</b> (ΔQ = ${bestDQ.toFixed(4)} > 0).</p>
+          <p>Node ${node} moves to <b>{${bestOpt.members.join(', ')}}</b> (&Delta;Q = ${bestDQ.toFixed(4)} &gt; 0).</p>
         `, { highlightNode: node, highlightEdges: bestOpt.hEdges, highlightComm: bestComm });
 
         assign[node] = bestComm;
@@ -374,8 +378,9 @@ function buildSteps() {
         addStep('phase1', `After moving node ${node}`, 'phase1', assign, `
           <p>Node <b>${node}</b> moved. Now <b>${commsNow.length} communities</b>:</p>
           <div class="formula-box">
-            Q = <span class="result">${Qnow.toFixed(4)}</span>
-            (was ${(Qnow - bestDQ).toFixed(4)}, gained ${bestDQ.toFixed(4)})
+            Q<sub>new</sub> = <span class="result">${Qnow.toFixed(4)}</span><br>
+            Q<sub>old</sub> = ${(Qnow - bestDQ).toFixed(4)}<br>
+            &Delta;Q = ${Qnow.toFixed(4)} &minus; ${(Qnow - bestDQ).toFixed(4)} = <span class="highlight">${bestDQ.toFixed(4)}</span>
           </div>
           <ul class="community-list">${commsNow.map((c) => {
             const members = [...c].sort((a,b)=>a-b);
@@ -460,12 +465,12 @@ function buildSteps() {
     }).join('')}</ul>
     <div class="formula-box">
       <span class="label">Final Modularity:</span><br><br>
-      Q = Σ [ L<sub>c</sub>/${m} − (d<sub>c</sub>/${2*m})² ]<br><br>
+      Q = &sum;<sub>c</sub> [ L<sub>c</sub> &frasl; m &minus; (d<sub>c</sub> &frasl; 2m)&sup2; ]<br><br>
       ${phase1Comms.map((c, i) => {
         const members = [...c].sort((a,b)=>a-b);
         const lc = EDGES.filter(([a,b]) => c.has(a) && c.has(b)).length;
         const dc = members.reduce((s, n) => s + degree(n), 0);
-        return `&nbsp; C<sub>${i}</sub>: ${lc}/${m} − (${dc}/${2*m})² = ${(lc/m).toFixed(4)} − ${(dc/(2*m)).toFixed(4)}² = ${(lc/m - (dc/(2*m))**2).toFixed(4)}`;
+        return `&nbsp; C<sub>${i}</sub>: ${lc} &frasl; ${m} &minus; (${dc} &frasl; ${2*m})&sup2; = ${(lc/m).toFixed(4)} &minus; ${(dc/(2*m)).toFixed(4)}&sup2; = <span class="highlight">${(lc/m - (dc/(2*m))**2).toFixed(4)}</span>`;
       }).join('<br>')}
       <span class="sep"></span>
       <span class="result">Q = ${Qphase1.toFixed(4)}</span>
@@ -799,13 +804,14 @@ function answerQuestion(q) {
       let explanation = `<p><strong>Node ${nd}</strong> is in community {${comm.join(', ')}} with <strong>${edgesToComm.length}</strong> edge(s) to community members and <strong>${edgesOutside.length}</strong> edge(s) to nodes outside.</p>`;
 
       if (comm.length > 1) {
+        const twoMSq = 2*m*m;
         explanation += `<p>The modularity gain for being in this community:<br>
-          <code>ΔQ = k_in/m − (Σ_tot × k_i)/(2m²)</code><br>
-          <code>&nbsp;&nbsp;&nbsp;= ${k_in}/${m} − (${sigma_tot} × ${k_i})/(2 × ${m}²)</code><br>
-          <code>&nbsp;&nbsp;&nbsp;= ${(k_in/m).toFixed(4)} − ${(sigma_tot*k_i/(2*m*m)).toFixed(4)} = <strong>${dq.toFixed(4)}</strong></code></p>`;
+          <code>&Delta;Q = k<sub>i,in</sub> &frasl; m &minus; (&Sigma;<sub>tot</sub> &middot; k<sub>i</sub>) &frasl; 2m&sup2;</code><br>
+          <code>&nbsp;&nbsp;&nbsp;= ${k_in} &frasl; ${m} &minus; (${sigma_tot} &times; ${k_i}) &frasl; ${twoMSq}</code><br>
+          <code>&nbsp;&nbsp;&nbsp;= ${(k_in/m).toFixed(4)} &minus; ${(sigma_tot*k_i/twoMSq).toFixed(4)} = <strong>${dq.toFixed(4)}</strong></code></p>`;
         explanation += `<p>Node ${nd} has ${edgesToComm.length} internal connection(s) (to ${edgesToComm.join(', ')||'none'}) vs ${edgesOutside.length} external (to ${edgesOutside.join(', ')||'none'}), making this community the best fit — it maximizes internal density.</p>`;
       } else {
-        explanation += `<p>Node ${nd} is currently alone. It hasn't been moved yet, or no neighbor community offers a positive ΔQ gain.</p>`;
+        explanation += `<p>Node ${nd} is currently alone. It hasn't been moved yet, or no neighbor community offers a positive &Delta;Q gain.</p>`;
       }
       return explanation;
     }
@@ -830,7 +836,10 @@ function answerQuestion(q) {
       options.sort((a, b) => b.dq - a.dq);
 
       for (const opt of options) {
-        result += `<p>→ Move to {${opt.members.join(', ')}}: k_in=${opt.k_in}, Σ_tot=${opt.sigma_tot} → <strong>ΔQ = ${opt.dq.toFixed(4)}</strong> ${opt.dq > 0 ? '✓' : '✗'}</p>`;
+        const twoMSq = 2*m*m;
+        result += `<p>&rarr; Move to {${opt.members.join(', ')}}:<br>
+          &nbsp;&nbsp;k<sub>i,in</sub>=${opt.k_in}, &Sigma;<sub>tot</sub>=${opt.sigma_tot}, k<sub>i</sub>=${degree(nd)}<br>
+          &nbsp;&nbsp;&Delta;Q = ${opt.k_in}/${m} &minus; (${opt.sigma_tot} &times; ${degree(nd)}) / ${twoMSq} = <strong>${opt.dq.toFixed(4)}</strong> ${opt.dq > 0 ? '&#10003;' : '&#10007;'}</p>`;
       }
       if (options.length === 0) result += `<p>No alternative communities among neighbors.</p>`;
       return result;
@@ -854,34 +863,34 @@ function answerQuestion(q) {
       const lc = internalEdges(mem);
       const dc = sumDegrees(mem);
       const contrib = lc/m - (dc/(2*m))**2;
-      return `C${i} {${mem.join(',')}}: L_c=${lc}, d_c=${dc} → ${lc}/${m} − (${dc}/${2*m})² = <strong>${contrib.toFixed(4)}</strong>`;
+      return `C<sub>${i}</sub> {${mem.join(',')}}: L<sub>c</sub>=${lc}, d<sub>c</sub>=${dc} &rarr; ${lc} &frasl; ${m} &minus; (${dc} &frasl; ${2*m})&sup2; = <strong>${contrib.toFixed(4)}</strong>`;
     }).join('<br>');
 
     return `<p><strong>Modularity Q</strong> measures how well the network is partitioned. Higher is better (max ~1, typically 0.3–0.7 is good).</p>
-      <p><code>Q = Σ [ L_c/m − (d_c/2m)² ]</code></p>
-      <p>First term <code>L_c/m</code>: fraction of edges inside community c. Rewards dense communities.<br>
-      Second term <code>(d_c/2m)²</code>: expected fraction if edges were random. Penalizes large communities.</p>
+      <p><code>Q = &sum;<sub>c</sub> [ L<sub>c</sub> &frasl; m &minus; (d<sub>c</sub> &frasl; 2m)&sup2; ]</code></p>
+      <p>First term <code>L<sub>c</sub> &frasl; m</code>: fraction of edges inside community c. Rewards dense communities.<br>
+      Second term <code>(d<sub>c</sub> &frasl; 2m)&sup2;</code>: expected fraction if edges were random. Penalizes large communities.</p>
       <p><strong>Current breakdown (Q = ${s.Q.toFixed(4)}):</strong><br>${breakdown}</p>`;
   }
 
   // ── Delta Q ──
   if (ql.includes('delta') || ql.includes('gain') || ql.includes('Δq') || ql.includes('dq')) {
-    return `<p><strong>Modularity gain ΔQ</strong> measures how much Q improves when moving node i to community C:</p>
-      <p><code>ΔQ = k_{i,in}/m − (Σ_tot × k_i)/(2m²)</code></p>
-      <p><strong>k_{i,in}</strong>: edges from node i to nodes already in C (reward for connections)<br>
-      <strong>Σ_tot</strong>: sum of degrees of nodes in C (penalty for community size)<br>
-      <strong>k_i</strong>: degree of node i<br>
+    return `<p><strong>Modularity gain &Delta;Q</strong> measures how much Q improves when moving node i to community C:</p>
+      <p><code>&Delta;Q = k<sub>i,in</sub> &frasl; m &minus; (&Sigma;<sub>tot</sub> &middot; k<sub>i</sub>) &frasl; 2m&sup2;</code></p>
+      <p><strong>k<sub>i,in</sub></strong>: edges from node i to nodes already in C (reward for connections)<br>
+      <strong>&Sigma;<sub>tot</sub></strong>: sum of degrees of nodes in C (penalty for community size)<br>
+      <strong>k<sub>i</sub></strong>: degree of node i<br>
       <strong>m</strong>: total edges = ${m}</p>
-      <p>The node moves to whichever community gives the <strong>largest positive ΔQ</strong>. If all ΔQ ≤ 0, the node stays put.</p>`;
+      <p>The node moves to whichever community gives the <strong>largest positive &Delta;Q</strong>. If all &Delta;Q &le; 0, the node stays put.</p>`;
   }
 
   // ── Phase 1 ──
   if (ql.includes('phase 1') || ql.includes('phase one') || ql.includes('local') && ql.includes('optim')) {
     return `<p><strong>Phase 1: Local Optimization</strong></p>
       <p>For each node, the algorithm:</p>
-      <p>1. Computes ΔQ for moving to each <strong>neighbor's</strong> community<br>
-      2. Picks the move with the <strong>largest positive ΔQ</strong><br>
-      3. If ΔQ > 0, makes the move; otherwise the node stays</p>
+      <p>1. Computes &Delta;Q for moving to each <strong>neighbor's</strong> community<br>
+      2. Picks the move with the <strong>largest positive &Delta;Q</strong><br>
+      3. If &Delta;Q &gt; 0, makes the move; otherwise the node stays</p>
       <p>This repeats in passes over all nodes until <strong>no node wants to move</strong> (convergence). In our graph, each K<sub>4</sub> clique has 6 internal edges vs only 1 bridge edge, so nodes strongly prefer their own clique.</p>`;
   }
 
@@ -899,7 +908,7 @@ function answerQuestion(q) {
     return `<p><strong>Bridge edges</strong> (shown dashed) pass through the bridge node 4:</p>
       <p>• <strong>3 — 4</strong>: connects clique A {0,1,2,3} to bridge node 4<br>
       • <strong>4 — 5</strong>: connects bridge node 4 to clique B {5,6,7,8}</p>
-      <p>Each clique has 6 internal edges (K<sub>4</sub>) but only 1 bridge edge, so the modularity gain from grouping nodes within their clique is much higher than pulling a node across the bridge. Node 4 (degree 2) joins whichever side offers better ΔQ.</p>`;
+      <p>Each clique has 6 internal edges (K<sub>4</sub>) but only 1 bridge edge, so the modularity gain from grouping nodes within their clique is much higher than pulling a node across the bridge. Node 4 (degree 2) joins whichever side offers better &Delta;Q.</p>`;
   }
 
   // ── Convergence ──
@@ -956,7 +965,7 @@ function answerQuestion(q) {
   // ── How does Louvain work (general) ──
   if (ql.includes('how') && (ql.includes('louvain') || ql.includes('algorithm') || ql.includes('work'))) {
     return `<p>The <strong>Louvain algorithm</strong> finds communities by maximizing modularity in two alternating phases:</p>
-      <p><strong>Phase 1</strong>: Start with each node in its own community. For each node, try moving it to each neighbor's community and compute the modularity gain ΔQ. Accept the move with the largest positive ΔQ. Repeat passes until no node moves.</p>
+      <p><strong>Phase 1</strong>: Start with each node in its own community. For each node, try moving it to each neighbor's community and compute the modularity gain &Delta;Q. Accept the move with the largest positive &Delta;Q. Repeat passes until no node moves.</p>
       <p><strong>Phase 2</strong>: Collapse each community into a super-node, creating a smaller weighted graph. Self-loops represent internal edges. Then run Phase 1 again on the smaller graph.</p>
       <p>Repeat until no improvement is possible. It's greedy and fast — O(n log n) in practice — which is why it scales to networks with millions of nodes.</p>`;
   }
@@ -966,7 +975,7 @@ function answerQuestion(q) {
     const comms = s.communities;
     return `<p>The algorithm finds <strong>${comms.length} communities</strong> because that maximizes modularity for this graph structure.</p>
       <p>Each K<sub>4</sub> clique has <strong>6 internal edges</strong> among 4 nodes, but only <strong>1 bridge edge</strong>. Merging the two cliques would add just 1–2 edges to L_c but dramatically increase d_c (the degree penalty), resulting in a net <strong>decrease</strong> in Q.</p>
-      <p>Node 4 (the bridge, degree 2) joins whichever clique offers the best ΔQ — it has 1 edge to each side, so the tie-breaking depends on processing order and current community sizes.</p>`;
+      <p>Node 4 (the bridge, degree 2) joins whichever clique offers the best &Delta;Q — it has 1 edge to each side, so the tie-breaking depends on processing order and current community sizes.</p>`;
   }
 
   // ── Complexity / performance ──
@@ -978,7 +987,7 @@ function answerQuestion(q) {
   // ── Fallback ──
   return `<p>I can answer questions about:</p>
     <p>• <strong>Specific nodes</strong>: "Tell me about node 5", "Why did node 3 join that community?"<br>
-    • <strong>The formula</strong>: "Explain the modularity formula", "What is ΔQ?"<br>
+    • <strong>The formula</strong>: "Explain the modularity formula", "What is &Delta;Q?"<br>
     • <strong>Algorithm phases</strong>: "How does Phase 1 work?", "What is aggregation?"<br>
     • <strong>Current step</strong>: "Explain this step", "What's happening?"<br>
     • <strong>Comparisons</strong>: "Compare node 1 and node 4", "What if node 0 moved?"<br>
@@ -1001,7 +1010,7 @@ function updateSuggestions() {
   }
   if (s.badge === 'phase1') {
     suggestions.push('Explain this step');
-    suggestions.push('What is ΔQ?');
+    suggestions.push('What is \u0394Q?');
   }
   if (s.badge === 'phase2') {
     suggestions.push('What is aggregation?');
